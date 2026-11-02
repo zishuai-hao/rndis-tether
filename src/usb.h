@@ -1,5 +1,5 @@
 /* IOKit user-client access to an RNDIS function: one control interface
- * (class e0/01/03 or 02/02/ff, interrupt IN) and its CDC data interface (class 0a,
+ * (class e0/01/03, 02/02/ff or ef/04/01, interrupt IN) and its CDC data interface (class 0a,
  * bulk IN + bulk OUT). Interfaces are opened normally: no seize, reset,
  * re-enumeration or configuration change, so ADB on other interfaces keeps working.
  *
@@ -32,6 +32,7 @@ typedef struct {
 typedef enum {
     USB_MATCH_RNDIS,    /* e0/01/03 */
     USB_MATCH_CDC,      /* the Android variant 02/02/ff */
+    USB_MATCH_MISC,     /* RNDIS over Ethernet ef/04/01 (Xiaomi 14) */
     USB_MATCHING_KINDS
 } UsbMatching;
 CFMutableDictionaryRef usb_create_matching(UsbMatching kind);
