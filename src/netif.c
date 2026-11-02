@@ -251,7 +251,22 @@ bool netstate_watch(void (*changed)(void)) {
     state_changed = changed;
     store = SCDynamicStoreCreate(NULL, CFSTR("rndis-tether"), notified, NULL);
     if (!store || !ipv4_patterns) return false;
-    if (!SCDynamicStoreSetNotificationKeys(store, NULL, ipv4_patterns)) return false;
+    CFStringRef v6_service = SCDynamicStoreKeyCreateNetworkServiceEntity(NULL, kSCDynamicStoreDomainState,
+                                                                         kSCCompAnyRegex, kSCEntNetIPv6);
+    CFStringRef v6_interface = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL, kSCDynamicStoreDomainState,
+                                                                             kSCCompAnyRegex, kSCEntNetIPv6);
+    if (!v6_service || !v6_interface) {
+        if (v6_service) CFRelease(v6_service);
+        if (v6_interface) CFRelease(v6_interface);
+        return false;
+    }
+    const void *patterns[] = {CFArrayGetValueAtIndex(ipv4_patterns, 0), v6_service, v6_interface};
+    CFArrayRef notifications = CFArrayCreate(NULL, patterns, 3, &kCFTypeArrayCallBacks);
+    CFRelease(v6_service);
+    CFRelease(v6_interface);
+    bool watching = notifications && SCDynamicStoreSetNotificationKeys(store, NULL, notifications);
+    if (notifications) CFRelease(notifications);
+    if (!watching) return false;
     CFRunLoopSourceRef source = SCDynamicStoreCreateRunLoopSource(NULL, store, 0);
     if (!source) return false;
     CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopDefaultMode);

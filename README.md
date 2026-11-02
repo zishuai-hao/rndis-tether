@@ -122,7 +122,15 @@ few seconds.
 | `ipv6` | `no` | Also set up IPv6 on the phone connection |
 | `tx-batch` | `auto` | Packets per USB transfer to the phone; try `1` if uploads stall with a particular phone |
 | `verbose` | `no` | Detailed log, for troubleshooting |
+| `network-hook` | `none` | Optional root-owned executable for network-change policies; see [examples](examples/README.md) |
 | `host-interface`, `peer-interface` | `feth50`, `feth51` | Names of the virtual network interfaces; change only if they are taken |
+
+## Optional split routing
+
+To keep Wi-Fi as the preferred connection while selected IPv6 hosts use the phone,
+see the [network-hook contract and routing example](examples/README.md). Policies
+can restore routes after reconnects without another daemon. Hooks are disabled by
+default; the core program remains plain C with no Python runtime requirement.
 
 ## Problems
 
@@ -187,8 +195,8 @@ apps -> macOS TCP/IP -> feth50 (DHCP from the phone, via macOS's own ipconfig)
                         feth51 <- BPF -> rndis-tether -> USB bulk <-> phone (RNDIS)
 ```
 
-- A LaunchDaemon waits for an RNDIS function (USB interface class `e0/01/03`, or the
-  Android variant `02/02/ff`; real CDC-ACM modems are filtered out by their
+- A LaunchDaemon waits for an RNDIS function (USB interface class `e0/01/03`, the
+  Android variant `02/02/ff`, or `ef/04/01` as on Xiaomi 14; real CDC-ACM modems are filtered out by their
   descriptors). It opens the interfaces normally, so ADB on the same phone keeps working.
 - It speaks RNDIS to the phone over IOKit and moves Ethernet frames to a `feth` pair
   through BPF. macOS sees an ordinary Ethernet interface: its own DHCP client, DNS and

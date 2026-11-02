@@ -50,7 +50,7 @@ bool ipconfig_set(const char *ifname, const char *method);
 /* Network state as macOS publishes it (SCDynamicStore). netstate_watch opens the store
  * lease_get, service_rank_* and primary_interface use; before it they find nothing
  * and change nothing.
- * It calls changed() on the main run loop whenever any network service's IPv4 state changes. */
+ * It calls changed() on the main run loop on IPv4/IPv6 service or IPv6 interface changes. */
 bool netstate_watch(void (*changed)(void));
 #define SERVICE_ID_MAX 64 /* a network service id, e.g. a UUID */
 typedef struct {

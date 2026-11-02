@@ -3,6 +3,9 @@
 /rndis-tether-controltest
 /rndis-tether-sessiontest
 /rndis-tether-bringuptest
+/rndis-tether-nethooktest
+/rndis-tether-usbmatchingtest
+__pycache__/
 /bpf-feth-test
 *.dSYM/
 .DS_Store

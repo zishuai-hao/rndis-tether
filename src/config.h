@@ -35,11 +35,14 @@
 #define SETTING_VERBOSE "verbose"
 #define SETTING_HOST_INTERFACE "host-interface"
 #define SETTING_PEER_INTERFACE "peer-interface"
+#define SETTING_NETWORK_HOOK "network-hook"
+#define NETWORK_HOOK_SIZE 256 /* path plus NUL; fits one CONFIG_LINE_SIZE setting */
 
 typedef struct {
     bool prefer_phone, ipv6, verbose;
     unsigned tx_batch; /* 0 = auto: what the phone allows, up to TX_BATCH_MAX */
     char host[IFNAMSIZ], peer[IFNAMSIZ];
+    char network_hook[NETWORK_HOOK_SIZE]; /* empty: disabled; otherwise a root-owned executable */
 } Config;
 
 /* How the settings file and the status socket write a bool. */

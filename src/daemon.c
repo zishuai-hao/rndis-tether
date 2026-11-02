@@ -4,6 +4,7 @@
 #include "log.h"
 #include "netif.h"
 #include "runtime.h"
+#include "nethook.h"
 #include "session.h"
 #include "status.h"
 #include "usb.h"
@@ -66,6 +67,11 @@ static void device_removed(void);
 static void device_matched(void *refcon, io_iterator_t iterator);
 static void forget_device(void);
 static void rescan_devices(void);
+
+static void network_changed(void) {
+    session_network_changed();
+    nethook_notify();
+}
 
 /* ------------------------------------------------------------ connecting */
 
@@ -456,10 +462,12 @@ int daemon_run(const Config *cfg, const char *settings_problem) {
     runtime_destroy_interfaces(INTERFACES_PATH);
 
     g.retry_timer = timer_new(retry_fired, NULL, 0, 0.5);
-    if (!netstate_watch(session_network_changed)) {
+    if (!netstate_watch(network_changed)) {
         logmsg("cannot watch network state (SystemConfiguration)");
         return 1;
     }
+    if (!nethook_start(g.cfg.network_hook, g.cfg.host))
+        logmsg("warning: network-hook must name a root-owned executable with root-owned, non-writable parents");
     for (unsigned i = 0; i < STOP_SIGNAL_COUNT; ++i) watch_signal(STOP_SIGNALS[i]);
     if (!status_serve(RUNTIME_DIR, STATUS_SOCKET, status_report))
         logmsg("warning: no answers for `rndis-tether status`: %s", strerror(errno));
@@ -472,6 +480,7 @@ int daemon_run(const Config *cfg, const char *settings_problem) {
     if (!g.device) logmsg("waiting for a phone with USB tethering turned on");
 
     CFRunLoopRun();
+    nethook_stop();
     logmsg("stopped");
     return 0;
 }

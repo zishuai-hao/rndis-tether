@@ -55,7 +55,8 @@ down: lower modules report upwards only through event structs (`ControlEvents`,
 | `src/status.c` | `name=value` status lines and the socket that serves them |
 | `src/admin.c` | The settings socket for administrators: `set <name> <value>`, caller checked by uid |
 | `src/runtime.c` | `/var/db/rndis-tether`: sockets prepared there and renamed into `/var/run`; the marker of our feth pair |
-| `src/usb.c` | The only IOKit USB code: matching (`e0/01/03`, `02/02/ff` minus CDC-ACM modems), open/close, transfers |
+| `src/usb.c` | The only IOKit USB code: matching (`e0/01/03`, `02/02/ff` minus CDC-ACM modems, `ef/04/01`), open/close, transfers |
+| `src/nethook.c` | Optional asynchronous, debounced root-owned network policy executable; child timeouts and reaping on the main run loop |
 | `src/netif.c` | feth pair, BPF, `ipconfig set`, SCDynamicStore (lease, service rank, primary interface), subprocesses |
 | `src/rndis.c` | Pure RNDIS encoding and parsing, CDC descriptor walk. No I/O. |
 | `src/clock.c`, `src/log.c` | Monotonic time and run-loop timers; logging (unified log under launchd, stderr otherwise) |
@@ -145,3 +146,20 @@ link up/down indications.
    `https://github.com/stlk0/rndis-tether/archive/refs/tags/vX.Y.Z.tar.gz`, put the url
    and sha256 into `packaging/homebrew/rndis-tether.rb` and copy the file to
    `Formula/rndis-tether.rb` in `stlk0/homebrew-tap`.
+
+## Optional network-hook checks
+
+`make check` also runs real-child hook tests (no root or phone required) and USB
+matching dictionary regressions. `make check-examples` tests the optional IPv6
+route-policy example with fake network/route operations, including reconnects,
+changed routers, DNS changes/failures and ownership-aware cleanup.
+
+Keep hook execution opt-in, asynchronous and single-threaded in the daemon. A hook
+gets no inherited USB/BPF/socket descriptors; validate its canonical executable and
+parent ownership before each spawn. An example policy must not replace default
+routes or choose a public DNS provider for users.
+
+The ef/04/01 match was checked against a Xiaomi 14 on an Intel Mac with macOS 26.
+USB enumeration, DHCP and an interface-bound IPv6 HTTPS request worked. The generic
+network-hook implementation has offline coverage; installed-service reconnect tests
+for the generic implementation still require a real phone and administrator access.

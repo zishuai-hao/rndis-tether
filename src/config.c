@@ -65,6 +65,20 @@ static bool set_tx_batch(unsigned *tx_batch, const char *value, char *why, size_
 }
 
 bool config_set(Config *c, const char *name, const char *value, char *why, size_t why_size) {
+    if (!strcmp(name, SETTING_NETWORK_HOOK)) {
+        if (!strcmp(value, "none")) { c->network_hook[0] = 0; return true; }
+        size_t length = strlen(value);
+        bool valid = value[0] == '/' && length < sizeof c->network_hook &&
+                     !isspace((unsigned char)value[length - 1]);
+        for (const unsigned char *p = (const unsigned char *)value; *p; ++p)
+            if (*p < 0x20 || *p == 0x7f || *p == '#') valid = false;
+        if (!valid) {
+            snprintf(why, why_size, "network-hook must be none or an absolute executable path shorter than %u bytes (no controls or #)", NETWORK_HOOK_SIZE);
+            return false;
+        }
+        strlcpy(c->network_hook, value, sizeof c->network_hook);
+        return true;
+    }
     if (!strcmp(name, SETTING_PREFER_PHONE)) return config_parse_bool(name, value, &c->prefer_phone, why, why_size);
     if (!strcmp(name, SETTING_IPV6)) return config_parse_bool(name, value, &c->ipv6, why, why_size);
     if (!strcmp(name, SETTING_VERBOSE)) return config_parse_bool(name, value, &c->verbose, why, why_size);
@@ -72,7 +86,7 @@ bool config_set(Config *c, const char *name, const char *value, char *why, size_
     if (!strcmp(name, SETTING_PEER_INTERFACE)) return set_interface(c->peer, name, value, why, why_size);
     if (!strcmp(name, SETTING_TX_BATCH)) return set_tx_batch(&c->tx_batch, value, why, why_size);
     snprintf(why, why_size, "unknown setting \"%s\" (known: " SETTING_PREFER_PHONE ", " SETTING_IPV6 ", "
-             SETTING_TX_BATCH ", " SETTING_VERBOSE ", " SETTING_HOST_INTERFACE ", " SETTING_PEER_INTERFACE ")", name);
+             SETTING_TX_BATCH ", " SETTING_VERBOSE ", " SETTING_HOST_INTERFACE ", " SETTING_PEER_INTERFACE ", " SETTING_NETWORK_HOOK ")", name);
     return false;
 }
 
@@ -182,6 +196,7 @@ void config_print(const Config *c, FILE *out) {
     fprintf(out, SETTING_VERBOSE " = %s\n", config_bool_text(c->verbose));
     fprintf(out, SETTING_HOST_INTERFACE " = %s\n", c->host);
     fprintf(out, SETTING_PEER_INTERFACE " = %s\n", c->peer);
+    fprintf(out, SETTING_NETWORK_HOOK " = %s\n", c->network_hook[0] ? c->network_hook : "none");
 }
 
 bool config_save(const Config *c, const char *path, char *why, size_t why_size) {
@@ -217,9 +232,16 @@ bool config_save(const Config *c, const char *path, char *why, size_t why_size) 
         "\n"
         "# Names of the two virtual network interfaces. Change only if these are taken.\n"
         SETTING_HOST_INTERFACE " = %s\n"
-        SETTING_PEER_INTERFACE " = %s\n",
+        SETTING_PEER_INTERFACE " = %s\n"
+        "\n"
+        "# Optional root-owned executable, called asynchronously with the phone interface\n"
+        "# after network changes and every 5 minutes. Its canonical parent directories\n"
+        "# must also be root-owned and not writable by group/others. No shell is used.\n"
+        "# Disabled by default. See examples/README.md before enabling.\n"
+        SETTING_NETWORK_HOOK " = %s\n",
         config_bool_text(c->prefer_phone), config_bool_text(c->ipv6), TX_BATCH_MAX, TX_BATCH_MAX,
-        tx_batch_text(c->tx_batch, batch, sizeof batch), config_bool_text(c->verbose), c->host, c->peer);
+        tx_batch_text(c->tx_batch, batch, sizeof batch), config_bool_text(c->verbose), c->host, c->peer,
+        c->network_hook[0] ? c->network_hook : "none");
     /* On disk before the rename: a power cut must not leave an empty file behind. */
     bool written = !ferror(f) && !fflush(f) && !fsync(fileno(f));
     if (fclose(f) || !written || chmod(temporary, 0644) || rename(temporary, path)) {

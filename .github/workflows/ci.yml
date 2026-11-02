@@ -26,6 +26,8 @@ jobs:
         run: make check
       - name: Static analyzer (fails on any finding)
         run: make analyze
+      - name: Optional routing example tests
+        run: make check-examples
       - name: Release archive
         run: make dist
       - name: Command-line smoke test
