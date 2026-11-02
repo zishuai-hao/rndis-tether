@@ -149,7 +149,10 @@ private func install(resources: String, config: GUIConfig) throws {
             try atomicWrite(config.encoded(), path: Paths.config)
             for path in allResolvers {
                 if newResolvers.contains(path) {
-                    try atomicWrite(Data((Paths.resolverMarker + "nameserver \(config.dnsServer)\n").utf8), path: path)
+                    // /etc/resolver otherwise inherits the IPv4 primary network's
+                    // A-only query flags. Explicit AAAA is required for ordinary
+                    // getaddrinfo clients using SuppressUnusable (including curl).
+                    try atomicWrite(Data((Paths.resolverMarker + "nameserver \(config.dnsServer)\nflags a aaaa\n").utf8), path: path)
                 } else { try fileManager.removeItem(atPath: path) }
             }
             settings["prefer-phone"] = config.preferPhone ? "yes" : "no"

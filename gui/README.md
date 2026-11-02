@@ -80,6 +80,15 @@ query; the chosen scoped DNS must already be applied to macOS. Set
 A DNS-only pass never implies successful route/HTTPS acceptance. These are
 development tests; the application itself does not require Python.
 
+Version 0.1.3 additionally writes `flags a aaaa` to each GUI-owned domain resolver.
+Without explicit flags, macOS can inherit A-only query policy from an IPv4 primary
+network even when a phone-specific IPv6 host route exists. Enabling AAAA on only
+these domain resolvers lets ordinary clients resolve the configured destinations
+without making the phone the default IPv6 network. The syntax is implemented by
+[Apple's resolver-file parser](https://github.com/apple-oss-distributions/configd/blob/main/dnsinfo/dnsinfo_flatfile.c).
+Reapply settings after updating to migrate existing GUI-owned files. A diagnostic
+failure is shown separately from successful configuration persistence.
+
 ## Privilege boundary
 
 The UI runs as the logged-in user. Status, diagnostics and pause/resume use the

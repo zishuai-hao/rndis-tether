@@ -187,7 +187,10 @@ final class TetherModel: ObservableObject {
                     switch result {
                     case .success(let output):
                         self.diagnostic = output.text
-                        if output.code != 0 { self.show("诊断尚未通过；配置保存、路由就绪和 HTTPS 连通是不同的检查项。", error: true) }
+                        if output.code != 0 {
+                            let applied = self.savedConfig != nil && self.savedConfig == (try? self.config.validated())
+                            self.show(applied ? "配置已保存；网络检查尚未通过，请查看诊断详情。" : "草稿网络检查尚未通过；尚未应用这些配置。", error: true)
+                        }
                         else { self.show(testHTTPS ? "路由与 HTTPS 直连检查通过。" : "目标路由检查通过；尚未测试 HTTPS。", error: false) }
                     case .failure(let error): self.diagnostic = error.localizedDescription
                     }
