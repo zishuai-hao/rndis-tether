@@ -20,8 +20,12 @@ Apple silicon. The packaged app does not require Python, Homebrew, or Xcode.
 
 The status panel refreshes every three seconds. **Check routes** is read-only:
 it shows the phone's current IPv6 gateway, DNS results and explicit host routes.
-It does not test HTTPS, authentication or firewall rules. DNS changes are effective
-after saving; the system resolver and its caches determine lookup results.
+**Check HTTPS** additionally tests an ordinary IPv6 HTTPS connection on port 443,
+using normal hostname resolution without binding an interface, overriding addresses,
+using a proxy, or sending credentials. HTTP 401/403 can confirm connectivity while
+still requiring server authentication. DNS changes are effective after saving; the
+system resolver and its caches determine lookup results. Diagnostics report a
+nonzero exit status when a required gateway, route, lookup or HTTPS test fails.
 
 The background service starts with the Mac and continues when the GUI quits. The
 GUI does not need to launch at login for routing to work. Pause is temporary and
@@ -58,6 +62,23 @@ Foundation file URLs can return display aliases even after symlink resolution.
 while verifying that writable temporary directories and regular files are rejected.
 The packaged helper's `check-system-paths` command runs the same installation
 directory checks without root or filesystem changes, and packaging runs it too.
+
+Version 0.1.2 fixes DNS bootstrap on Macs whose primary network is IPv4. Darwin
+implicitly treats zero `getaddrinfo` flags as `AI_DEFAULT` / `AI_ADDRCONFIG` and
+can filter IPv6 answers before phone host routes are ready. The native lookup now
+uses `AI_UNUSABLE` to obtain AAAA records independently of current reachability,
+as documented in [Apple's getaddrinfo manual](https://github.com/apple-oss-distributions/Libinfo/blob/main/lookup.subproj/getaddrinfo.3).
+Saved settings and unapplied drafts are identified separately in diagnostics.
+The installer explicitly reconciles routes after restarting the daemon, because
+startup hooks can run while its installation lock is still held.
+
+For opt-in real-system validation, run `make check-gui-dns`. Set `GUI_DNS_TARGET`
+and `GUI_DNS_SERVER` to compare the real helper's lookup against a control DNS
+query; the chosen scoped DNS must already be applied to macOS. Set
+`GUI_REQUIRE_SAVED=yes` to verify the persisted configuration and
+`GUI_REQUIRE_HTTPS=yes` to require a working route and ordinary direct HTTPS too.
+A DNS-only pass never implies successful route/HTTPS acceptance. These are
+development tests; the application itself does not require Python.
 
 ## Privilege boundary
 

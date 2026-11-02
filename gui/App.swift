@@ -115,7 +115,10 @@ final class TetherModel: ObservableObject {
         do {
             let validated = try config.validated()
             let payload = try validated.encoded().base64EncodedString()
-            authorized(["install", resources, payload]) { self.savedConfig = validated }
+            authorized(["install", resources, payload]) {
+                self.savedConfig = validated
+                self.diagnose()
+            }
         } catch { show(error.localizedDescription, error: true) }
     }
 
@@ -170,18 +173,22 @@ final class TetherModel: ObservableObject {
         }
     }
 
-    func diagnose() {
+    func diagnose(testHTTPS: Bool = false) {
         guard !diagnosticBusy, !busy else { return }
         do {
             let payload = try config.validated().encoded().base64EncodedString()
             let executable = helper, interface = service["interface"] ?? "feth50"
             diagnosticBusy = true
             DispatchQueue.global(qos: .utility).async {
-                let result = Result { try checked(executable, ["diagnose", payload, interface], timeout: 30) }
+                let arguments = ["diagnose", payload, interface] + (testHTTPS ? ["--https"] : [])
+                let result = Result { try command(executable, arguments, timeout: testHTTPS ? 90 : 30) }
                 DispatchQueue.main.async {
                     self.diagnosticBusy = false
                     switch result {
-                    case .success(let text): self.diagnostic = text
+                    case .success(let output):
+                        self.diagnostic = output.text
+                        if output.code != 0 { self.show("诊断尚未通过；配置保存、路由就绪和 HTTPS 连通是不同的检查项。", error: true) }
+                        else { self.show(testHTTPS ? "路由与 HTTPS 直连检查通过。" : "目标路由检查通过；尚未测试 HTTPS。", error: false) }
                     case .failure(let error): self.diagnostic = error.localizedDescription
                     }
                 }
@@ -310,6 +317,7 @@ struct MainView: View {
                     Spacer()
                     if model.diagnosticBusy { ProgressView().controlSize(.small) }
                     Button("检查路由") { model.diagnose() }.disabled(model.busy || model.diagnosticBusy)
+                    Button("检查 HTTPS") { model.diagnose(testHTTPS: true) }.disabled(model.busy || model.diagnosticBusy)
                 }
                 ScrollView {
                     Text(model.diagnostic).font(.system(.caption, design: .monospaced))

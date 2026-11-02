@@ -88,6 +88,10 @@ func resolveAddresses(_ target: String) throws -> [String] {
         var hints = addrinfo()
         hints.ai_family = AF_INET6
         hints.ai_socktype = SOCK_STREAM
+        // On Darwin, zero flags implicitly enable AI_DEFAULT/AI_ADDRCONFIG.
+        // With an IPv4 primary network that suppresses AAAA before our phone host
+        // routes exist. DNS discovery must not depend on those routes being ready.
+        hints.ai_flags = AI_UNUSABLE
         var list: UnsafeMutablePointer<addrinfo>?
         let error = getaddrinfo(target, nil, &hints, &list)
         guard error == 0 else { throw TetherError("\(target) 的 AAAA 查询失败：\(String(cString: gai_strerror(error)))") }

@@ -14,7 +14,7 @@ HEADERS = $(wildcard src/*.h)
 ARCHIVE = rndis-tether-macos.tar.gz
 VERSION := $(shell sed -n 's/^\#define VERSION "\(.*\)"/\1/p' src/config.h)
 
-.PHONY: all check check-examples check-gui gui asan analyze dist clean
+.PHONY: all check check-examples check-gui check-gui-dns gui asan analyze dist clean
 all: rndis-tether
 
 rndis-tether: $(SOURCES) $(HEADERS)
@@ -77,6 +77,11 @@ check-gui:
 	./build/gui/policy-tests
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/TrustedPaths.swift tests/gui/TrustedPathsTests.swift -o build/gui/trusted-path-tests
 	./build/gui/trusted-path-tests
+
+# Optional real-system checks. Set GUI_DNS_TARGET and GUI_DNS_SERVER to test DNS;
+# GUI_REQUIRE_HTTPS=yes additionally requires an installed route and direct HTTPS.
+check-gui-dns:
+	python3 tests/gui/DNSIntegration.py
 
 ASAN_CFLAGS = $(TEST_CFLAGS) -fsanitize=address
 asan: $(SELFTEST) $(CONTROLTEST) $(SESSIONTEST) $(BRINGUPTEST) $(HOOKTEST) $(USBMATCHTEST) $(HEADERS)

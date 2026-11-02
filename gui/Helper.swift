@@ -160,6 +160,10 @@ private func install(resources: String, config: GUIConfig) throws {
             // The existing installer provides the launchd job and root-owned daemon.
             // Invoke once after all settings are ready, avoiding three restarts.
             _ = try checked(bundleCLI, ["install"], timeout: 45)
+            // Startup/network hooks can run while this installer holds the lock
+            // and intentionally skip work. Reconcile once before releasing it so
+            // a connected phone need not wait for the five-minute refresh.
+            try updateRoutes(config, interface: interface)
         } catch {
             let original = error
             _ = try? command("/bin/launchctl", ["bootout", "system/io.github.stlk0.rndis-tether"])
@@ -197,23 +201,40 @@ private func uninstall() throws {
     }
 }
 
-private func diagnose(_ config: GUIConfig, interface: String) throws {
+private func diagnose(_ config: GUIConfig, interface: String, testHTTPS: Bool = false) throws -> Bool {
     let system = MacRouteSystem()
     let gateway = try system.gateway(interface)
+    let saved = GUIConfig.load() == config
+    var ready = gateway != nil
     print("USB 接口：\(interface)")
     print("手机 IPv6 网关：\(gateway ?? "未就绪；请保持移动数据开启、手机 Wi-Fi 关闭，并开启 USB 网络共享。")")
-    print("DNS：\(config.dnsServer.isEmpty ? "系统 DNS" : config.dnsServer + "（需保存配置后生效）")")
+    print("配置：\(saved ? "已保存到磁盘；重新打开应用会恢复" : "当前为未应用的草稿")")
+    print("DNS：\(config.dnsServer.isEmpty ? "系统 DNS" : config.dnsServer + (saved ? "（已保存）" : "（尚未应用）"))")
+    print("本次解析使用 macOS 当前解析配置；未保存的 DNS 不会用于本次查询。")
     for target in config.targets {
         print("\n目标：\(target)")
         do {
             for address in try system.resolve(target) {
                 let hop = try system.route(address)
-                if let hop = hop { print("  \(address)  →  \(hop.interface) / \(hop.gateway)") }
-                else { print("  \(address)  →  当前无独立 /128 路由") }
+                if let hop = hop {
+                    print("  \(address)  →  \(hop.interface) / \(hop.gateway)")
+                    if hop != Hop(interface: interface, gateway: gateway ?? "") { ready = false }
+                } else { ready = false; print("  \(address)  →  当前无独立 /128 路由；解析成功，路由尚未就绪") }
             }
-        } catch { print("  " + error.localizedDescription + " 可配置专用 DNS 或使用 IPv6 地址。") }
+        } catch { ready = false; print("  " + error.localizedDescription + " 请检查已应用的 DNS 配置。") }
+        if testHTTPS {
+            let host = ipv6(target).map { "[\($0)]" } ?? target
+            let result = try command("/usr/bin/curl", ["-6", "--noproxy", "*", "--connect-timeout", "4", "--max-time", "6",
+                "--silent", "--show-error", "--output", "/dev/null", "--write-out",
+                "HTTP %{http_code}; peer %{remote_ip}; TLS verify %{ssl_verify_result}", "https://" + host + "/"], timeout: 8)
+            print("  HTTPS 直连（普通域名解析，不绑定接口或覆盖地址）：\(result.text.trimmingCharacters(in: .whitespacesAndNewlines))")
+            if result.code != 0 { ready = false; print("  HTTPS 尚未通过，curl 退出码 \(result.code)。") }
+            else { print("  HTTPS 链路已连通；401/403 等状态仍需服务器认证或权限。") }
+        }
     }
-    print("\n诊断为只读检查，不会修改路由；HTTPS 可用性还取决于服务器和防火墙。")
+    print("\n结果：\(ready ? "目标路由检查通过" : "尚未通过：请查看以上未就绪或失败项")。")
+    print(testHTTPS ? "HTTPS 检查为直连，不使用代理或发送登录凭据；诊断不会修改路由。" : "本次未测试 HTTPS。可点击“检查 HTTPS”验证普通域名访问。")
+    return ready
 }
 
 @main
@@ -231,9 +252,9 @@ struct HelperMain {
                 print(try resolveAddresses(args[1]).joined(separator: "\n"))
             } else if args == ["uninstall"] {
                 try uninstall()
-            } else if args.count == 3 && args[0] == "diagnose" && matches(args[2], "^feth[0-9]{1,10}$") {
+            } else if (args.count == 3 || (args.count == 4 && args[3] == "--https")) && args[0] == "diagnose" && matches(args[2], "^feth[0-9]{1,10}$") {
                 guard let data = Data(base64Encoded: args[1]) else { throw TetherError("配置编码无效。") }
-                try diagnose(JSONDecoder().decode(GUIConfig.self, from: data).validated(), interface: args[2])
+                if try !diagnose(JSONDecoder().decode(GUIConfig.self, from: data).validated(), interface: args[2], testHTTPS: args.count == 4) { exit(2) }
             } else if args.count == 1 && matches(args[0], "^feth[0-9]{1,10}$") {
                 try withLock {
                     try checkFile(Paths.config)
