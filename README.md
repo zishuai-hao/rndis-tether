@@ -1,5 +1,14 @@
 # rndis-tether
 
+Original project: [stlk0/rndis-tether](https://github.com/stlk0/rndis-tether),
+by [stlk0](https://github.com/stlk0). Copyright (c) 2026 stlk0, licensed under
+the [MIT License](LICENSE).
+
+This is an independent fork by [zishuai-hao](https://github.com/zishuai-hao),
+adding Xiaomi USB matching, optional IPv6 routing hooks and a native macOS GUI.
+The original USB tethering implementation is credited to the upstream project;
+the GUI and fork additions are not an official upstream release.
+
 **Use your Android phone's internet on a Mac through a USB cable.**
 
 macOS does not support USB tethering from Android phones. rndis-tether adds it: plug in

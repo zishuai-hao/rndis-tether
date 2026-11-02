@@ -4,6 +4,16 @@ An optional native SwiftUI control panel and menu-bar item for this fork. The
 existing C daemon remains independent of the GUI. macOS 13 or newer, Intel and
 Apple silicon. The packaged app does not require Python, Homebrew, or Xcode.
 
+## Author and upstream project
+
+The original [rndis-tether](https://github.com/stlk0/rndis-tether) USB tethering
+daemon is by [stlk0](https://github.com/stlk0), Copyright (c) 2026 stlk0, under
+the [MIT License](../LICENSE). This independent fork by
+[zishuai-hao](https://github.com/zishuai-hao) adds Xiaomi USB matching, IPv6 routing
+hooks and this native GUI. These additions are not an official upstream release.
+The app bundles the original license as `Contents/Resources/LICENSE.txt` and
+shows upstream attribution in its window and macOS About panel.
+
 ## Using the application
 
 1. Unzip the archive and move **RNDIS Tether.app** to Applications, then open it.

@@ -350,6 +350,13 @@ struct MainView: View {
                     .buttonStyle(.borderedProminent).tint(Color(red: 0.05, green: 0.46, blue: 0.44))
                     .disabled(model.busy).keyboardShortcut("s", modifiers: .command)
             }
+            HStack(spacing: 4) {
+                Text("原作者")
+                Link("stlk0", destination: URL(string: "https://github.com/stlk0")!)
+                Text("·")
+                Link("上游 rndis-tether", destination: URL(string: "https://github.com/stlk0/rndis-tether")!)
+                Text("· MIT · zishuai-hao 独立分支")
+            }.font(.caption).foregroundStyle(.secondary)
         }.padding(.horizontal, 24).padding(.vertical, 16)
     }
 }
