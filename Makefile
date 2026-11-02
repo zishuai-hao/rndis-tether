@@ -75,6 +75,8 @@ check-gui:
 	mkdir -p build/gui
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/RoutePolicy.swift tests/gui/PolicyTests.swift -o build/gui/policy-tests
 	./build/gui/policy-tests
+	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/TrustedPaths.swift tests/gui/TrustedPathsTests.swift -o build/gui/trusted-path-tests
+	./build/gui/trusted-path-tests
 
 ASAN_CFLAGS = $(TEST_CFLAGS) -fsanitize=address
 asan: $(SELFTEST) $(CONTROLTEST) $(SESSIONTEST) $(BRINGUPTEST) $(HOOKTEST) $(USBMATCHTEST) $(HEADERS)

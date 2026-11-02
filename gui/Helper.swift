@@ -3,20 +3,6 @@ import Darwin
 
 private let fileManager = FileManager.default
 
-private func trustedDirectory(_ path: String, create: Bool = false, mode: mode_t = 0o755) throws {
-    if create && !fileManager.fileExists(atPath: path) {
-        guard mkdir(path, mode) == 0 else { throw TetherError("无法创建 \(path)：\(String(cString: strerror(errno)))") }
-    }
-    var current = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-    while true {
-        var info = stat()
-        guard lstat(current, &info) == 0, info.st_uid == 0, info.st_mode & 0o022 == 0,
-              info.st_mode & S_IFMT == S_IFDIR else { throw TetherError("系统目录权限不安全：\(current)") }
-        if current == "/" { return }
-        current = URL(fileURLWithPath: current).deletingLastPathComponent().path
-    }
-}
-
 private func checkFile(_ path: String) throws {
     var info = stat()
     if lstat(path, &info) != 0 {
@@ -235,7 +221,10 @@ struct HelperMain {
     static func main() {
         do {
             let args = Array(CommandLine.arguments.dropFirst())
-            if args.count == 3 && args[0] == "install" {
+            if args == ["check-system-paths"] {
+                try checkSystemDirectories()
+                print("系统目录检查通过（只读，无需管理员授权）。")
+            } else if args.count == 3 && args[0] == "install" {
                 guard let data = Data(base64Encoded: args[2]) else { throw TetherError("配置编码无效。") }
                 try install(resources: args[1], config: JSONDecoder().decode(GUIConfig.self, from: data).validated())
             } else if args.count == 2 && args[0] == "resolve" && (validHostname(args[1]) || ipv6(args[1]) != nil) {

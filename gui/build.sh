@@ -11,7 +11,7 @@ gui_sdk="$(xcrun --show-sdk-path)"
 for gui_arch in arm64 x86_64; do
     xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -O \
         -sdk "$gui_sdk" -target "$gui_arch-apple-macosx13.0" \
-        gui/Shared.swift gui/RoutePolicy.swift gui/Helper.swift \
+        gui/Shared.swift gui/TrustedPaths.swift gui/RoutePolicy.swift gui/Helper.swift \
         -o "$gui_build/helper-$gui_arch"
     xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -O \
         -sdk "$gui_sdk" -target "$gui_arch-apple-macosx13.0" \
@@ -45,5 +45,6 @@ codesign --force --sign - --timestamp=none "$gui_app"
 codesign --verify --deep --strict "$gui_app"
 plutil -lint "$gui_app/Contents/Info.plist"
 "$gui_app/Contents/MacOS/RNDISTetherGUI" --smoke-test
+"$gui_app/Contents/Resources/rndis-tether-gui-helper" check-system-paths
 ditto -c -k --sequesterRsrc --keepParent "$gui_app" "$gui_build/RNDIS-Tether-macOS.zip"
 printf '%s\n' "$gui_app" "$gui_build/RNDIS-Tether-macOS.zip"

@@ -130,8 +130,12 @@ final class TetherModel: ObservableObject {
         // as one base64 JSON argument, validated again by the privileged executable.
         let line = ([helper] + arguments).map(shellQuote).joined(separator: " ")
         let script = "do shell script " + appleScriptLiteral(line) + " with administrator privileges"
+        let preflight = helper
         DispatchQueue.global(qos: .userInitiated).async {
-            let result: Result<CommandResult, Error> = Result { try command("/usr/bin/osascript", ["-e", script], timeout: 240) }
+            let result: Result<CommandResult, Error> = Result {
+                _ = try checked(preflight, ["check-system-paths"])
+                return try command("/usr/bin/osascript", ["-e", script], timeout: 240)
+            }
             DispatchQueue.main.async {
                 self.busy = false
                 switch result {
@@ -237,7 +241,8 @@ struct MainView: View {
                 Text("Android USB 网络 · IPv6 自动分流").font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
-            Text("macOS 原生版").font(.caption).foregroundStyle(.secondary)
+            Text("macOS 原生版 · " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
+                .font(.caption).foregroundStyle(.secondary)
         }.padding(.horizontal, 24).padding(.vertical, 18)
     }
 

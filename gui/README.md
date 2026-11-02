@@ -51,6 +51,14 @@ and notarize the resulting archive. Do not disable Gatekeeper globally. Local
 compilation and a resource smoke test do not verify the administrator prompt or
 real USB reconnects: those require running the installed app and authorizing it.
 
+Version 0.1.1 fixes system-directory validation for the standard macOS `/var` and
+`/etc` symlinks. The helper uses POSIX `realpath` and checks every canonical parent;
+Foundation file URLs can return display aliases even after symlink resolution.
+`make check-gui` also runs read-only regressions against these actual system paths,
+while verifying that writable temporary directories and regular files are rejected.
+The packaged helper's `check-system-paths` command runs the same installation
+directory checks without root or filesystem changes, and packaging runs it too.
+
 ## Privilege boundary
 
 The UI runs as the logged-in user. Status, diagnostics and pause/resume use the
