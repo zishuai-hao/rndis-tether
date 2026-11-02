@@ -1,0 +1,132 @@
+import Foundation
+import Darwin
+
+enum Paths {
+    static let daemon = "/Library/PrivilegedHelperTools/io.github.stlk0.rndis-tether"
+    static let helper = "/Library/PrivilegedHelperTools/rndis-tether-gui-helper"
+    static let config = "/etc/rndis-tether-gui.json"
+    static let daemonConfig = "/etc/rndis-tether.conf"
+    static let stateDir = "/var/db/rndis-tether-gui"
+    static let state = stateDir + "/routes.json"
+    static let resolverMarker = "# Managed by RNDIS Tether GUI\n"
+}
+
+struct TetherError: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
+}
+
+func matches(_ value: String, _ pattern: String) -> Bool {
+    value.range(of: pattern, options: .regularExpression) != nil
+}
+
+func ipv6(_ text: String, routable: Bool = true) -> String? {
+    var raw = in6_addr()
+    guard inet_pton(AF_INET6, text, &raw) == 1 else { return nil }
+    let bytes = withUnsafeBytes(of: raw) { Array($0) }
+    if routable && (bytes.allSatisfy { $0 == 0 } ||
+        (bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1) ||
+        bytes[0] == 0xff || (bytes[0] == 0xfe && bytes[1] & 0xc0 == 0x80) ||
+        (bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff)) {
+        return nil
+    }
+    var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+    guard inet_ntop(AF_INET6, &raw, &buffer, socklen_t(buffer.count)) != nil else { return nil }
+    return String(cString: buffer)
+}
+
+func validHostname(_ text: String) -> Bool {
+    guard text.utf8.count <= 253, !text.isEmpty else { return false }
+    return text.split(separator: ".", omittingEmptySubsequences: false).allSatisfy {
+        $0.count <= 63 && matches(String($0), "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+    }
+}
+
+struct GUIConfig: Codable, Equatable {
+    var enabled = true
+    var preferPhone = false
+    var targets: [String] = []
+    var dnsServer = ""
+
+    func validated() throws -> GUIConfig {
+        var result = self
+        result.targets = []
+        for line in targets {
+            let target = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if target.isEmpty { continue }
+            guard let value = ipv6(target) ?? (validHostname(target) ? target : nil) else {
+                throw TetherError("无效的目标：\(target)。请输入域名或可路由的 IPv6 地址，不含 https://、端口或路径。")
+            }
+            if !result.targets.contains(value) { result.targets.append(value) }
+        }
+        guard result.targets.count <= 8 else { throw TetherError("最多可配置 8 个目标。") }
+        guard !enabled || !result.targets.isEmpty else { throw TetherError("启用自动路由前，请至少添加一个目标。") }
+        result.dnsServer = dnsServer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !result.dnsServer.isEmpty {
+            var address = in_addr()
+            guard inet_pton(AF_INET, result.dnsServer, &address) == 1 || ipv6(result.dnsServer) != nil else {
+                throw TetherError("DNS 服务器必须是有效的 IPv4 或 IPv6 地址。")
+            }
+        }
+        return result
+    }
+
+    static func load() -> GUIConfig? {
+        guard let data = FileManager.default.contents(atPath: Paths.config) else { return nil }
+        return try? JSONDecoder().decode(GUIConfig.self, from: data)
+    }
+
+    func encoded() throws -> Data { try JSONEncoder().encode(self) }
+}
+
+struct CommandResult {
+    var code: Int32
+    var text: String
+}
+
+// Call off the UI thread. The deadline also bounds hung diagnostic subprocesses.
+func command(_ path: String, _ arguments: [String], timeout: TimeInterval = 8) throws -> CommandResult {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: path)
+    process.arguments = arguments
+    process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"]
+    process.standardInput = FileHandle.nullDevice
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    try process.run()
+    let timeoutWork = DispatchWorkItem {
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+    }
+    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutWork)
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    timeoutWork.cancel()
+    return CommandResult(code: process.terminationStatus, text: String(decoding: data, as: UTF8.self))
+}
+
+@discardableResult
+func checked(_ path: String, _ arguments: [String], timeout: TimeInterval = 8) throws -> String {
+    let result = try command(path, arguments, timeout: timeout)
+    guard result.code == 0 else { throw TetherError("\(URL(fileURLWithPath: path).lastPathComponent)：\(result.text.trimmingCharacters(in: .whitespacesAndNewlines))") }
+    return result.text
+}
+
+func fields(_ text: String, separator: Character = "=") -> [String: String] {
+    var result: [String: String] = [:]
+    for line in text.split(separator: "\n") {
+        let pair = line.split(separator: separator, maxSplits: 1)
+        if pair.count == 2 {
+            result[String(pair[0]).trimmingCharacters(in: .whitespaces)] = String(pair[1]).trimmingCharacters(in: .whitespaces)
+        }
+    }
+    return result
+}
+
+func shellQuote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+
+func appleScriptLiteral(_ text: String) -> String {
+    "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        .replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r") + "\""
+}

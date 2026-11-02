@@ -14,7 +14,7 @@ HEADERS = $(wildcard src/*.h)
 ARCHIVE = rndis-tether-macos.tar.gz
 VERSION := $(shell sed -n 's/^\#define VERSION "\(.*\)"/\1/p' src/config.h)
 
-.PHONY: all check check-examples asan analyze dist clean
+.PHONY: all check check-examples check-gui gui asan analyze dist clean
 all: rndis-tether
 
 rndis-tether: $(SOURCES) $(HEADERS)
@@ -66,6 +66,15 @@ check: $(TESTS)
 # Optional Python example tests; the daemon itself has no Python runtime dependency.
 check-examples:
 	python3 tests/routepolicy_test.py
+
+# Optional native control panel; the C daemon has no Swift dependency.
+gui:
+	/bin/sh gui/build.sh
+
+check-gui:
+	mkdir -p build/gui
+	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/RoutePolicy.swift tests/gui/PolicyTests.swift -o build/gui/policy-tests
+	./build/gui/policy-tests
 
 ASAN_CFLAGS = $(TEST_CFLAGS) -fsanitize=address
 asan: $(SELFTEST) $(CONTROLTEST) $(SESSIONTEST) $(BRINGUPTEST) $(HOOKTEST) $(USBMATCHTEST) $(HEADERS)

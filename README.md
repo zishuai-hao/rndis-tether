@@ -7,6 +7,10 @@ the phone, turn on USB tethering, and the Mac is online, as if you had plugged i
 network cable. It starts by itself, survives sleep, unplugging and restarts, and needs
 no window or menu.
 
+This fork also provides an optional [native macOS control panel](gui/README.md)
+with a menu-bar item, destination routing settings, scoped DNS and service management.
+Build the universal `.app` with `make gui`; the standalone C daemon is unchanged.
+
 ![rndis-tether monitor: a Galaxy S25 is plugged in, connects within seconds and runs a speed test at about 500 Mbit/s](docs/demo.gif)
 
 ## What you need

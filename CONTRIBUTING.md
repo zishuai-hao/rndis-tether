@@ -163,3 +163,13 @@ The ef/04/01 match was checked against a Xiaomi 14 on an Intel Mac with macOS 26
 USB enumeration, DHCP and an interface-bound IPv6 HTTPS request worked. The generic
 network-hook implementation has offline coverage; installed-service reconnect tests
 for the generic implementation still require a real phone and administrator access.
+
+## Optional native GUI
+
+`gui/` is a separate SwiftUI application, built with `make gui`; it does not change
+the C daemon's language, dependencies, threading or run loop. `make check-gui`
+exercises the native route policy with a fake network, including reconnects, DNS
+failures, changed routers, partial failures, checkpoints and route ownership.
+The application includes the universal C CLI and a universal Swift helper; its
+only runtime dependencies are macOS system frameworks. See `gui/README.md` for
+packaging, administrator authorization, fixed paths and scoped-DNS ownership.
