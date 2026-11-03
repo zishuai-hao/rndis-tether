@@ -30,12 +30,17 @@ shows upstream attribution in its window and macOS About panel.
 
 The status panel refreshes every three seconds. **Check routes** is read-only:
 it shows the phone's current IPv6 gateway, DNS results and explicit host routes.
-**Check HTTPS** additionally tests an ordinary IPv6 HTTPS connection on port 443,
-using normal hostname resolution without binding an interface, overriding addresses,
-using a proxy, or sending credentials. HTTP 401/403 can confirm connectivity while
-still requiring server authentication. DNS changes are effective after saving; the
-system resolver and its caches determine lookup results. Diagnostics report a
-nonzero exit status when a required gateway, route, lookup or HTTPS test fails.
+**Probe public HTTPS** additionally probes `https://www.cloudflare.com/` and
+`https://www.baidu.com/` concurrently. Each result is shown separately; at least
+one successful TLS-verified HTTPS response confirms the phone's IPv6 HTTPS exit.
+These probes use the phone interface's scoped DNS to obtain public AAAA records,
+pin the selected address and bind curl to the USB interface. Hostname SNI and TLS
+certificate verification remain enabled; Wi-Fi or a proxy cannot provide a false
+positive. Probes never change routes/DNS and only run on request, without credentials.
+VPN benchmark/fake-IP answers are rejected. Missing phone DNS is reported explicitly.
+The configured targets are checked separately for DNS and /128 routes; their HTTPS
+services are not tested by the public probes. DNS changes are effective after saving.
+Diagnostics fail if target routing fails or both public probes fail.
 
 The background service starts with the Mac and continues when the GUI quits. The
 GUI does not need to launch at login for routing to work. Pause is temporary and
@@ -86,7 +91,7 @@ For opt-in real-system validation, run `make check-gui-dns`. Set `GUI_DNS_TARGET
 and `GUI_DNS_SERVER` to compare the real helper's lookup against a control DNS
 query; the chosen scoped DNS must already be applied to macOS. Set
 `GUI_REQUIRE_SAVED=yes` to verify the persisted configuration and
-`GUI_REQUIRE_HTTPS=yes` to require a working route and ordinary direct HTTPS too.
+`GUI_REQUIRE_HTTPS=yes` to require a working route and a public USB HTTPS probe too.
 A DNS-only pass never implies successful route/HTTPS acceptance. These are
 development tests; the application itself does not require Python.
 
@@ -98,6 +103,10 @@ without making the phone the default IPv6 network. The syntax is implemented by
 [Apple's resolver-file parser](https://github.com/apple-oss-distributions/configd/blob/main/dnsinfo/dnsinfo_flatfile.c).
 Reapply settings after updating to migrate existing GUI-owned files. A diagnostic
 failure is shown separately from successful configuration persistence.
+
+Version 0.1.5 replaces per-target HTTPS requests with the two public probes above.
+Target-server availability and phone Internet availability are reported separately.
+This diagnostics update does not change persisted settings or routing policy.
 
 ## Privilege boundary
 
@@ -129,4 +138,5 @@ Additional files:
 - `/var/db/rndis-tether-gui/`: root-only ownership state and lock.
 - `/etc/resolver/<configured-domain>`: only when explicitly opting into scoped DNS.
 
-No telemetry, updater, public DNS default, server address, or credentials are bundled.
+No telemetry, updater, public DNS default, private server address, or credentials
+are bundled. The two documented public HTTPS probe destinations are built in.

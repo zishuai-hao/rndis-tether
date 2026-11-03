@@ -11,7 +11,7 @@ gui_sdk="$(xcrun --show-sdk-path)"
 for gui_arch in arm64 x86_64; do
     xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -O \
         -sdk "$gui_sdk" -target "$gui_arch-apple-macosx13.0" \
-        gui/Shared.swift gui/TrustedPaths.swift gui/RoutePolicy.swift gui/Helper.swift \
+        gui/Shared.swift gui/TrustedPaths.swift gui/RoutePolicy.swift gui/HTTPSProbe.swift gui/Helper.swift \
         -o "$gui_build/helper-$gui_arch"
     xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -O \
         -sdk "$gui_sdk" -target "$gui_arch-apple-macosx13.0" \

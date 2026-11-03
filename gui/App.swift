@@ -191,7 +191,7 @@ final class TetherModel: ObservableObject {
                             let applied = self.savedConfig != nil && self.savedConfig == (try? self.config.validated())
                             self.show(applied ? "配置已保存；网络检查尚未通过，请查看诊断详情。" : "草稿网络检查尚未通过；尚未应用这些配置。", error: true)
                         }
-                        else { self.show(testHTTPS ? "路由与 HTTPS 直连检查通过。" : "目标路由检查通过；尚未测试 HTTPS。", error: false) }
+                        else { self.show(testHTTPS ? "目标路由与公共 HTTPS 探测通过；目标服务器的 HTTPS 尚未测试。" : "目标路由检查通过；尚未测试 HTTPS。", error: false) }
                     case .failure(let error): self.diagnostic = error.localizedDescription
                     }
                 }
@@ -320,7 +320,7 @@ struct MainView: View {
                     Spacer()
                     if model.diagnosticBusy { ProgressView().controlSize(.small) }
                     Button("检查路由") { model.diagnose() }.disabled(model.busy || model.diagnosticBusy)
-                    Button("检查 HTTPS") { model.diagnose(testHTTPS: true) }.disabled(model.busy || model.diagnosticBusy)
+                    Button("探测公网 HTTPS") { model.diagnose(testHTTPS: true) }.disabled(model.busy || model.diagnosticBusy)
                 }
                 ScrollView {
                     Text(model.diagnostic).font(.system(.caption, design: .monospaced))

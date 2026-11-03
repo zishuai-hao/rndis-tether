@@ -2,7 +2,8 @@
 """Opt-in, read-only tests against a development Mac's actual DNS configuration.
 
 GUI_DNS_TARGET is deliberately supplied by the operator, never bundled.
-DNS-only success is not routing/HTTPS acceptance. Set GUI_REQUIRE_HTTPS=yes for both.
+DNS-only success is not routing/public-HTTPS acceptance. Set GUI_REQUIRE_HTTPS=yes for both.
+Public probes test the phone's exit; they do not test the configured target's HTTPS service.
 """
 import base64
 import ipaddress
@@ -60,7 +61,10 @@ def main():
         print("PASS: settings exist on disk and the diagnostic recognizes the applied configuration")
     if require_https or os.environ.get("GUI_REQUIRE_ROUTES") == "yes":
         assert diagnostic.returncode == 0, "Routing/HTTPS acceptance has NOT passed"
-        print("PASS: route" + (" and ordinary direct HTTPS" if require_https else "") + " acceptance")
+        if require_https:
+            assert "https://www.cloudflare.com/" in diagnostic.stdout and "https://www.baidu.com/" in diagnostic.stdout
+            assert "本次未探测目标服务器的 HTTPS 服务" in diagnostic.stdout
+        print("PASS: route" + (" and public USB HTTPS" if require_https else "") + " acceptance")
     else:
         print("PASS DNS only; route/HTTPS acceptance was not requested and is not implied")
 

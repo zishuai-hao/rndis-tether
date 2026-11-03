@@ -77,9 +77,11 @@ check-gui:
 	./build/gui/policy-tests
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/TrustedPaths.swift tests/gui/TrustedPathsTests.swift -o build/gui/trusted-path-tests
 	./build/gui/trusted-path-tests
+	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/HTTPSProbe.swift tests/gui/HTTPSProbeTests.swift -o build/gui/https-probe-tests
+	./build/gui/https-probe-tests
 
 # Optional real-system checks. Set GUI_DNS_TARGET and GUI_DNS_SERVER to test DNS;
-# GUI_REQUIRE_HTTPS=yes additionally requires an installed route and direct HTTPS.
+# GUI_REQUIRE_HTTPS=yes additionally requires an installed route and a public USB HTTPS probe.
 check-gui-dns:
 	python3 tests/gui/DNSIntegration.py
 

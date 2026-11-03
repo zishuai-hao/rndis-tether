@@ -225,18 +225,22 @@ private func diagnose(_ config: GUIConfig, interface: String, testHTTPS: Bool = 
                 } else { ready = false; print("  \(address)  →  当前无独立 /128 路由；解析成功，路由尚未就绪") }
             }
         } catch { ready = false; print("  " + error.localizedDescription + " 请检查已应用的 DNS 配置。") }
-        if testHTTPS {
-            let host = ipv6(target).map { "[\($0)]" } ?? target
-            let result = try command("/usr/bin/curl", ["-6", "--noproxy", "*", "--connect-timeout", "4", "--max-time", "6",
-                "--silent", "--show-error", "--output", "/dev/null", "--write-out",
-                "HTTP %{http_code}; peer %{remote_ip}; TLS verify %{ssl_verify_result}", "https://" + host + "/"], timeout: 8)
-            print("  HTTPS 直连（普通域名解析，不绑定接口或覆盖地址）：\(result.text.trimmingCharacters(in: .whitespacesAndNewlines))")
-            if result.code != 0 { ready = false; print("  HTTPS 尚未通过，curl 退出码 \(result.code)。") }
-            else { print("  HTTPS 链路已连通；401/403 等状态仍需服务器认证或权限。") }
-        }
     }
-    print("\n结果：\(ready ? "目标路由检查通过" : "尚未通过：请查看以上未就绪或失败项")。")
-    print(testHTTPS ? "HTTPS 检查为直连，不使用代理或发送登录凭据；诊断不会修改路由。" : "本次未测试 HTTPS。可点击“检查 HTTPS”验证普通域名访问。")
+    print("\n目标 DNS / 路由：\(ready ? "通过" : "尚未通过")。")
+    if testHTTPS {
+        print("\n手机公网 IPv6 HTTPS（并行探测，绑定 \(interface)）：")
+        let probes = publicHTTPSProbes(interface: interface)
+        for probe in probes {
+            print("  https://\(probe.host)/：\(probe.passed ? "通过" : "未通过")\n  \(probe.detail)")
+        }
+        let passed = probes.filter { $0.passed }.count
+        print("公网 HTTPS：\(passed)/\(probes.count) 通过；至少一个通过即可确认手机 IPv6 HTTPS 出口可用。")
+        ready = ready && passed > 0
+        print("公共探测使用手机接口 DNS 获取 AAAA，并固定地址、绑定 USB 接口；保留 TLS 证书校验。")
+        print("本次未探测目标服务器的 HTTPS 服务；公共站点通过不代表目标服务器可访问。")
+    }
+    print("\n结果：\(ready ? (testHTTPS ? "目标路由与公共 HTTPS 探测通过" : "目标路由检查通过") : "尚未通过：请查看以上未就绪或失败项")。")
+    print(testHTTPS ? "探测不使用代理或登录凭据，也不修改路由或 DNS；只有点击探测时才访问公共站点。" : "本次未测试 HTTPS。可点击“探测公网 HTTPS”检查手机 IPv6 出口。")
     return ready
 }
 
