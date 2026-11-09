@@ -11,6 +11,21 @@ enum Paths {
     static let resolverMarker = "# Managed by RNDIS Tether GUI\n"
 }
 
+func appResourcesDirectory() -> String {
+    // Bundle caches its original URL even when Finder moves a running .app.
+    // The kernel tracks the executable's current vnode location instead.
+    var executablePath = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+    if proc_pidpath(getpid(), &executablePath, UInt32(executablePath.count)) > 0 {
+        let executable = URL(fileURLWithPath: String(cString: executablePath))
+        let directory = executable.deletingLastPathComponent()
+        let contents = directory.deletingLastPathComponent()
+        if directory.lastPathComponent == "MacOS", contents.lastPathComponent == "Contents" {
+            return contents.appendingPathComponent("Resources").path
+        }
+    }
+    return Bundle.main.resourceURL!.path
+}
+
 struct TetherError: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
@@ -87,6 +102,10 @@ struct CommandResult {
 
 // Call off the UI thread. The deadline also bounds hung diagnostic subprocesses.
 func command(_ path: String, _ arguments: [String], timeout: TimeInterval = 8) throws -> CommandResult {
+    if ["rndis-tether-gui-helper", "rndis-tether"].contains(URL(fileURLWithPath: path).lastPathComponent),
+       !FileManager.default.isExecutableFile(atPath: path) {
+        throw TetherError("无法执行应用资源：\(path)\n请退出前端，再从安装位置重新打开完整的 RNDIS Tether.app。")
+    }
     let process = Process()
     process.executableURL = URL(fileURLWithPath: path)
     process.arguments = arguments

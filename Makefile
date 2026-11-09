@@ -79,6 +79,8 @@ check-gui:
 	./build/gui/trusted-path-tests
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/HTTPSProbe.swift tests/gui/HTTPSProbeTests.swift -o build/gui/https-probe-tests
 	./build/gui/https-probe-tests
+	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library gui/Shared.swift tests/gui/ResourcePathProbe.swift -o build/gui/resource-path-probe
+	python3 tests/gui/ResourcePathTest.py build/gui/resource-path-probe
 
 # Optional real-system checks. Set GUI_DNS_TARGET and GUI_DNS_SERVER to test DNS;
 # GUI_REQUIRE_HTTPS=yes additionally requires an installed route and a public USB HTTPS probe.

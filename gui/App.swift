@@ -21,7 +21,7 @@ final class TetherModel: ObservableObject {
     private var previous: (Date, Double, Double)?
     private var savedConfig: GUIConfig?
 
-    let resources = Bundle.main.resourceURL!.path
+    var resources: String { appResourcesDirectory() }
     var cli: String { resources + "/rndis-tether" }
     var helper: String { resources + "/rndis-tether-gui-helper" }
     var config: GUIConfig {
@@ -425,7 +425,7 @@ enum AppEntry {
             return
         }
         if CommandLine.arguments.contains("--smoke-test") {
-            let root = Bundle.main.resourceURL!.path
+            let root = appResourcesDirectory()
             let ok = ["rndis-tether", "rndis-tether-gui-helper"].allSatisfy { FileManager.default.isExecutableFile(atPath: root + "/" + $0) }
             print(ok ? "App resources OK" : "App resources missing")
             exit(ok ? 0 : 1)

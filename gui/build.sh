@@ -47,4 +47,10 @@ plutil -lint "$gui_app/Contents/Info.plist"
 "$gui_app/Contents/MacOS/RNDISTetherGUI" --smoke-test
 "$gui_app/Contents/Resources/rndis-tether-gui-helper" check-system-paths
 ditto -c -k --sequesterRsrc --keepParent "$gui_app" "$gui_build/RNDIS-Tether-macOS.zip"
+gui_check="$(mktemp -d "$gui_build/archive-check.XXXXXX")"
+trap 'rm -rf "$gui_check"' EXIT
+ditto -x -k "$gui_build/RNDIS-Tether-macOS.zip" "$gui_check"
+codesign --verify --deep --strict "$gui_check/RNDIS Tether.app"
+"$gui_check/RNDIS Tether.app/Contents/MacOS/RNDISTetherGUI" --smoke-test
+"$gui_check/RNDIS Tether.app/Contents/Resources/rndis-tether-gui-helper" check-system-paths
 printf '%s\n' "$gui_app" "$gui_build/RNDIS-Tether-macOS.zip"
