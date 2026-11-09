@@ -46,8 +46,7 @@ final class TetherModel: ObservableObject {
         if legacyInstalled && !ownsSession { return "首次启动连接会授权迁移旧版，清理本程序的常驻后台、目标路由和专用 DNS。" }
         if !ownsSession { return "点击启动连接并授权。手机 USB 网络会在本次前端运行期间提供服务。" }
         if !online { return "请连接手机并开启 USB 网络共享，后台会自动检测。" }
-        if ipv6Address.isEmpty { return "手机 IPv6 尚未就绪，请确认移动数据提供 IPv6。" }
-        return "手机 USB 网络已就绪。域名分流由 Clash 的 RNDIS Tether 分流组负责。"
+        return "手机 USB 网络已就绪。目标分流由 Clash 的 RNDIS Tether 分流组负责。"
     }
 
     init(poll: Bool = true) {
@@ -113,7 +112,7 @@ final class TetherModel: ObservableObject {
 
     private func coordinateClash() {
         guard !coordinating, !busy else { return }
-        let ready = online && !ipv6Address.isEmpty && !saved.targets.isEmpty
+        let ready = online && !saved.targets.isEmpty
         let needsRecovery = FileManager.default.fileExists(atPath: UserFiles.journal.path)
         guard ready || clashSelected || needsRecovery else { return }
         var restorationOwner = getpid()

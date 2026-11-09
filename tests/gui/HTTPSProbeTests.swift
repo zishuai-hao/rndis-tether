@@ -82,6 +82,23 @@ enum HTTPSProbeTests {
             try expect(publicHTTPSProbes(interface: "feth50", run: fakeDNS.run).allSatisfy { !$0.passed })
             try expect(!fakeDNS.calls.contains { $0.0 == "/usr/bin/curl" })
             print("PASS: missing phone DNS and fake-only answers fail without Wi-Fi fallback")
+
+            for address in ["0.0.0.0", "10.1.2.3", "100.64.0.1", "127.0.0.1", "169.254.1.1", "172.16.0.1", "192.168.1.1", "192.0.2.1", "198.18.0.1", "198.51.100.1", "203.0.113.1", "224.0.0.1", "255.255.255.255", "1.1.1.1\0junk"] {
+                try expect(publicProbeAddress(address, family: .ipv4) == nil)
+            }
+            try expect(publicProbeAddress("1.1.1.1", family: .ipv4) == "1.1.1.1")
+            let dualDNS = dnsFixture.replacingOccurrences(of: "nameserver[0] : 2001:db8::53", with: "nameserver[0] : 2001:db8::53\n  nameserver[1] : 192.0.2.53")
+            try expect(phoneDNSServers(dualDNS, interface: "feth50", family: .ipv4).first == "192.0.2.53")
+            let v4 = FakeProbe(); v4.answers = "1.1.1.1\n"
+            let v4Results = publicHTTPSProbes(interface: "feth50", family: .ipv4, run: v4.run)
+            try expect(v4Results.count == 2 && v4Results.allSatisfy { $0.passed })
+            for (_, args) in v4.calls.filter({ $0.0 == "/usr/bin/curl" }) {
+                try expect(args.contains("-4") && !args.contains("-6"))
+                try expect(args.contains("--interface") && args.contains("feth50"))
+                try expect(args.contains("--resolve") && args.contains { $0.hasSuffix(":443:1.1.1.1") })
+            }
+            try expect(v4.calls.filter { $0.0 == "/usr/bin/dig" }.allSatisfy { $0.1.contains("A") && !$0.1.contains("AAAA") })
+            print("PASS: IPv4-only USB HTTPS uses A records and interface binding with public-address validation")
         } catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }
     }
 }

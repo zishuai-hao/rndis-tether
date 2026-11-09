@@ -16,9 +16,9 @@ enum DemandTests {
         return result!.toString()
     }
 
-    static func rejects(_ action: () throws -> Void) throws {
+    static func rejects(_ label: String = "expected rejection", _ action: () throws -> Void) throws {
         do { try action() } catch { return }
-        throw TetherError("expected rejection")
+        throw TetherError(label)
     }
 
     static func main() {
@@ -34,8 +34,9 @@ enum DemandTests {
                 }
                 return
             }
-            if args.count == 2, args[0] == "--export-config" {
-                let preferences = DemandPreferences(targets: ["example.com"], dnsServer: "1.1.1.1")
+            if args.count >= 2, args[0] == "--export-config" {
+                let targets = args.count > 2 ? Array(args.dropFirst(2)) : ["example.com:443", "192.0.2.129/24:8000-8100", "[2001:db8::abcd/64]:443", "1.1.1.1", "2606:4700:4700::1111"]
+                let preferences = DemandPreferences(targets: targets, dnsServer: "1.1.1.1")
                 let result = try scriptResult(preferences.clashScript(), input: "{ipv6:false,mode:'rule',dns:{nameserver:['system']},rules:['MATCH,DIRECT']}")
                 try Data(result.utf8).write(to: URL(fileURLWithPath: args[1]))
                 return
@@ -44,8 +45,8 @@ enum DemandTests {
             let validated = try preferences.validated()
             try expect(validated.targets == ["example.com", "2001:db8::1"], "target normalization")
             try expect(validated.dnsServer == "1.1.1.1", "DNS normalization")
-            for target in ["https://example.com", "example.com:443", "bad/name", "::1", "fe80::1", "a\nb"] {
-                try rejects { _ = try DemandPreferences(targets: [target]).validated() }
+            for target in ["https://example.com", "example.com:0", "bad/name", "999.1.1.1", "fe80::1%feth50", "192.0.2.1\0junk", "a\nb"] {
+                try rejects("accepted invalid target " + target) { _ = try DemandPreferences(targets: [target]).validated() }
             }
             try rejects { _ = try DemandPreferences(dnsServer: "dns.example.com").validated() }
             try rejects { _ = try DemandPreferences(targets: (1...9).map { "a\($0).example.com" }).validated() }
@@ -54,10 +55,10 @@ enum DemandTests {
             let config = try JSONSerialization.jsonObject(with: Data(result.utf8)) as! [String: Any]
             try expect(config["custom"] as? String == "test", "existing script preserved")
             let proxy = (config["proxies"] as! [[String: Any]])[0]
-            try expect(proxy["type"] as? String == "direct" && proxy["interface-name"] as? String == "feth50" && proxy["ip-version"] as? String == "ipv6", "USB outbound")
+            try expect(proxy["type"] as? String == "direct" && proxy["interface-name"] as? String == "feth50" && proxy["ip-version"] as? String == "dual", "USB outbound")
             let group = (config["proxy-groups"] as! [[String: Any]])[0]
             try expect(group["proxies"] as? [String] == ["DIRECT", ClashControl.usb], "safe initial selector")
-            try expect(config["rules"] as? [String] == ["DOMAIN-SUFFIX,example.com,RNDIS Tether", "IP-CIDR6,2001:db8::1/128,RNDIS Tether,no-resolve", "MATCH,DIRECT"], "rule ordering")
+            try expect(config["rules"] as? [String] == ["DOMAIN-SUFFIX,example.com,RNDIS Tether", "IP-CIDR6,2001:db8::1/128,RNDIS Tether", "MATCH,DIRECT"], "rule ordering")
             try expect(config["ipv6"] as? Bool == true, "Clash IPv6 enabled")
             let dns = config["dns"] as! [String: Any]
             try expect(dns["fake-ip-filter"] as? [String] == ["localhost", "+.example.com"], "fake IP exclusion")
@@ -68,7 +69,30 @@ enum DemandTests {
             try rejects { _ = try preferences.clashScript(existingScript: "// BEGIN RNDIS TETHER MANAGED CONFIG") }
             try rejects { _ = try scriptResult(script, input: "{dns:{'enhanced-mode':'fake-ip','fake-ip-filter-mode':'whitelist'}}") }
             try rejects { _ = try scriptResult(script, input: "{proxies:[{name:'RNDIS Tether USB'}]}") }
-            print("PASS preference validation, JavaScript execution, existing script preservation and repeat export")
+            let examples: [(String, String, String)] = [
+                ("Example.COM:0443", "example.com:443", "AND,((DOMAIN-SUFFIX,example.com),(DST-PORT,443)),RNDIS Tether"),
+                ("192.0.2.255/25:8000-8100", "192.0.2.128/25:8000-8100", "AND,((IP-CIDR,192.0.2.128/25),(DST-PORT,8000-8100)),RNDIS Tether"),
+                ("[2001:db8:ffff::/33]:443", "[2001:db8:8000::/33]:443", "AND,((IP-CIDR6,2001:db8:8000::/33),(DST-PORT,443)),RNDIS Tether"),
+                ("192.0.2.1", "192.0.2.1", "IP-CIDR,192.0.2.1/32,RNDIS Tether"),
+                ("2001:db8::443", "2001:db8::443", "IP-CIDR6,2001:db8::443/128,RNDIS Tether"),
+                ("192.0.2.1/0", "0.0.0.0/0", "IP-CIDR,0.0.0.0/0,RNDIS Tether"),
+                ("2001:db8::1/0", "::/0", "IP-CIDR6,::/0,RNDIS Tether")
+            ]
+            for (input, normalized, rule) in examples {
+                let target = try RoutingTarget(input)
+                try expect(target.normalized == normalized, "target normalization for " + input)
+                try expect(target.clashRule(group: "RNDIS Tether") == rule, "rule for " + input)
+            }
+            for input in ["192.0.2.1/33", "2001:db8::1/129", "example.com/24", "192.0.2.1/-1", "1.2.3.4/", "1.2.3.4/24/8", "example.com:65536", "example.com:443-80", "example.com:443,80", "example.com:+443", "[2001:db8::1]443", "[2001:db8::1", "[1.2.3.4]:443", "[2001:db8::1]:", "192.0.2.1:1-2-3"] {
+                try rejects("accepted invalid target " + input) { _ = try RoutingTarget(input) }
+            }
+            let combined = DemandPreferences(targets: examples.map { $0.0 }, dnsServer: "1.1.1.1")
+            let combinedJSON = try scriptResult(combined.clashScript(), input: "{}")
+            let combinedConfig = try JSONSerialization.jsonObject(with: Data(combinedJSON.utf8)) as! [String: Any]
+            try expect(combinedConfig["rules"] as? [String] == examples.map { $0.2 }, "compiled mixed rules preserved")
+            let combinedDNS = combinedConfig["dns"] as! [String: Any]
+            try expect(combinedDNS["fake-ip-filter"] as? [String] == ["+.example.com"], "only domain targets receive DNS policies")
+            print("PASS IPv4/IPv6, CIDR normalization, combined port conditions, preference validation and repeat export")
 
             let normal = Data("HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\n{\"x\":1}".utf8)
             try expect(try ClashControl.decodeResponse(normal)["x"] as? Int == 1, "normal HTTP")

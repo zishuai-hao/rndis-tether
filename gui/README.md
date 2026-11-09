@@ -1,6 +1,6 @@
 # RNDIS Tether for macOS
 
-Version 0.2.0 provides an on-demand USB backend and domain-based forwarding through
+Version 0.2.1 provides an on-demand USB backend and address/port forwarding through
 Clash Verge / mihomo. The application requires macOS 13 or newer and supports Intel
 and Apple silicon.
 
@@ -12,9 +12,10 @@ hooks and this GUI. The application includes the upstream license and attributio
 ## Setup
 
 1. Unzip the application, move it to Applications, and open it.
-2. Enter up to eight domain suffixes or IPv6 literals, one per line. A suffix covers
-   the domain itself and its subdomains. The optional DNS field sets a Clash DNS
-   policy for these domains. Leaving it empty uses Clash's existing DNS servers.
+2. Enter up to eight domain suffixes, IPv4/IPv6 addresses or CIDR networks, one per
+   line. A suffix covers the domain itself and its subdomains. A destination port or
+   port range is optional. The optional DNS field sets a Clash DNS policy for domain
+   targets. Leaving it empty uses Clash's existing DNS servers.
 3. Save and export **Clash-USB.js**. It includes the current Clash Verge global script
    and appends a marked RNDIS block. Enable this combined script once in Clash Verge's
    global extension script editor. Export again and update Clash after changing targets.
@@ -26,14 +27,34 @@ hooks and this GUI. The application includes the upstream license and attributio
 6. Connect the Android phone and enable USB tethering. For mobile IPv6, enable mobile
    data and turn off the phone's Wi-Fi when its Wi-Fi uplink lacks IPv6.
 
-The script adds a direct outbound bound to `feth50` with IPv6, a selector named
+Examples of accepted targets follow. Omitting the port matches all destination ports.
+
+```text
+example.com
+example.com:443
+192.0.2.10:9876
+192.0.2.0/24:8000-8100
+2001:db8::/64
+[2001:db8::/64]:443
+```
+
+IPv6 targets with ports require brackets. Ports range from 1 to 65535. CIDR host bits
+are normalized to the network address. Single IPs produce /32 or /128 rules. An
+address and port form a logical `AND` condition, so both must match. CIDR rules use
+mihomo's ordinary destination-IP matching, including DNS resolution for requests
+carrying a hostname. Rule syntax is documented in [mihomo routing rules](https://wiki.metacubex.one/en/config/rules/).
+All these conditions apply to traffic that enters Clash. TCP applications can use
+the system HTTP proxy, and supported UDP applications can use Clash's SOCKS inbound.
+
+The script adds a direct outbound bound to `feth50` with IPv4/IPv6 dual stack, a selector named
 `RNDIS Tether`, and rules pointing the configured destinations at that selector.
 These use mihomo's documented [DIRECT outbound fields](https://wiki.metacubex.one/en/config/proxies/direct/).
-The selector initially uses `DIRECT`. Once the phone has IPv6, the GUI switches it to
+The selector initially uses `DIRECT`. Once the USB connection is online, the GUI switches it to
 `RNDIS Tether USB`. Disconnecting or stopping restores the previous selector choice.
 The GUI checks every three seconds and handles Clash profile reloads.
 
-The generated DNS configuration adds domain fake-IP exclusions and optional
+IPv4 forwarding is available on phones without IPv6. IPv6 destinations require a
+working phone IPv6 connection. The generated DNS configuration adds domain fake-IP exclusions and optional
 nameserver policies. Fake-IP blacklist mode and redir-host are supported. Conflicting
 proxy/group names and fake-IP whitelist mode are rejected. Global Clash mode bypasses
 the domain rules. The controller integration currently supports Clash Verge's local
@@ -75,8 +96,7 @@ First-run migration snapshots the older installation at
 `/var/db/rndis-tether/legacy-backup.json`, stops and removes its launch daemon,
 installed executables and settings, and removes resolver files carrying the old GUI's
 ownership marker. Stopping the old backend removes its owned interfaces and associated
-routes. If startup fails, migration attempts to restore the snapshot. User settings
-start fresh in 0.2.0. Enter and save the desired domain suffixes in the new GUI.
+routes. If startup fails, migration attempts to restore the snapshot. The 0.2 GUI uses user-directory preferences. Enter and save the desired domain suffixes in the new GUI.
 The backup and root lock directories remain on disk after stopping.
 
 An administrator can restore the migration snapshot using the bundled helper.
@@ -90,7 +110,7 @@ sudo '/Applications/RNDIS Tether.app/Contents/Resources/rndis-tether-gui-helper'
 
 **Check connection** reads the phone IPv6 gateway and Clash selector. **Probe public
 HTTPS** concurrently probes Cloudflare and Baidu using the phone's scoped DNS and
-USB-bound IPv6 connections, retaining TLS verification. Each result is shown
+USB-bound IPv4 connections, plus IPv6 probes when the phone has an IPv6 gateway, retaining TLS verification. Each result is shown
 separately. At least one successful HTTPS response confirms the public USB exit.
 These probes test the phone exit. To test domain forwarding, access a configured
 destination through Clash. Diagnostic operations are read-only and send no login
@@ -103,6 +123,8 @@ make check             # C tests with UBSan and Guard Malloc
 make analyze           # C static analysis
 make check-gui         # preferences, real JS execution, Unix controller, probes and resources
 make gui               # universal application and ZIP in build/gui/
+# Optional real rule-engine test using an installed mihomo, all traffic on loopback.
+python3 tests/gui/RuleIntegration.py build/gui/demand-tests /path/to/mihomo
 ```
 
 Only macOS system frameworks are required at runtime. The offline GUI integration

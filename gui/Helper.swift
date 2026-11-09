@@ -210,8 +210,9 @@ struct HelperMain {
                       args[0] == "diagnose-demand", matches(args[1], "^feth[0-9]{1,10}$") {
                 let interface = args[1]
                 let gateway = try phoneIPv6Gateway(interface)
-                var ready = gateway != nil
-                print("USB 接口：\(interface)\n手机 IPv6 网关：\(gateway ?? "未就绪")")
+                let status = fields(try command(appResourcesDirectory() + "/rndis-tether", ["status", "--raw"]).text)
+                var ready = status["state"] == "online" && status["interface"] == interface
+                print("USB 接口：\(interface)\n手机 IPv4：\(status["address"] ?? "未就绪")\n手机 IPv6 网关：\(gateway ?? "未就绪")")
                 if !DemandPreferences.load().targets.isEmpty {
                     do {
                         let selection = try ClashControl.discover().selection()
@@ -222,9 +223,14 @@ struct HelperMain {
                     print("Clash 分流：尚未配置目标")
                 }
                 if args.count == 3 {
-                    let probes = publicHTTPSProbes(interface: interface)
-                    for probe in probes { print("https://\(probe.host)/：\(probe.passed ? "通过" : "未通过")\n\(probe.detail)") }
-                    ready = ready && probes.contains { $0.passed }
+                    let families: [ProbeIPFamily] = gateway == nil ? [.ipv4] : [.ipv4, .ipv6]
+                    var passed = false
+                    for family in families {
+                        let probes = publicHTTPSProbes(interface: interface, family: family)
+                        for probe in probes { print("\(family.label) https://\(probe.host)/：\(probe.passed ? "通过" : "未通过")\n\(probe.detail)") }
+                        passed = passed || probes.contains { $0.passed }
+                    }
+                    ready = ready && passed
                 }
                 print("结果：\(ready ? "手机与 Clash 分流检查通过" : "尚未通过，请检查以上项目")。")
                 print("用户配置：\(UserFiles.settings.path)\nClash 脚本：\(UserFiles.clashScript.path)")

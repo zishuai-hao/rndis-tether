@@ -17,7 +17,7 @@ network cable. It starts by itself, survives sleep, unplugging and restarts, and
 no window or menu.
 
 This fork also provides an optional [native macOS control panel](gui/README.md)
-with a menu-bar item, an on-demand USB backend and Clash domain forwarding.
+with a menu-bar item, an on-demand USB backend and Clash address/port forwarding.
 Build the universal `.app` with `make gui`. The GUI uses user-directory preferences
 and launches the bundled backend for the current GUI session.
 

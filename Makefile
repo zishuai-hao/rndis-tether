@@ -73,7 +73,7 @@ gui:
 
 check-gui:
 	mkdir -p build/gui
-	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/DemandPreferences.swift gui/ClashControl.swift tests/gui/DemandTests.swift -o build/gui/demand-tests
+	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/RoutingTarget.swift gui/DemandPreferences.swift gui/ClashControl.swift tests/gui/DemandTests.swift -o build/gui/demand-tests
 	./build/gui/demand-tests
 	python3 tests/gui/ClashControlIntegration.py build/gui/demand-tests
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/TrustedPaths.swift tests/gui/TrustedPathsTests.swift -o build/gui/trusted-path-tests

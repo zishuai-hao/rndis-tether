@@ -41,7 +41,7 @@ struct MainView: View {
                 .background(LinearGradient(colors: [Color(red: 0.12, green: 0.63, blue: 0.58), Color(red: 0.06, green: 0.35, blue: 0.42)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 13))
             VStack(alignment: .leading, spacing: 3) {
                 Text("RNDIS Tether").font(.title2.weight(.semibold))
-                Text("按需 USB 网络 · Clash 域名分流").font(.subheadline).foregroundStyle(.secondary)
+                Text("按需 USB 网络 · Clash 双栈分流").font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
             Text("macOS 原生版 · " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""))
@@ -75,17 +75,17 @@ struct MainView: View {
     private var routing: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 14) {
-                Text("通过 Clash 按域名分流").font(.headline)
+                Text("通过 Clash 按目标和端口分流").font(.headline)
                 HStack(alignment: .top, spacing: 20) {
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("目标域名或 IPv6 地址").font(.subheadline.weight(.medium))
+                        Text("目标域名、IP 或 CIDR").font(.subheadline.weight(.medium))
                         TextEditor(text: $model.targetsText)
                             .font(.system(.body, design: .monospaced))
                             .frame(height: 84).padding(6)
                             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
                             .accessibilityLabel("路由目标，每行一个")
-                        Text("每行一个域名后缀或 IPv6 地址，最多 8 个。\n域名及其子域名由 Clash 分流到手机 USB。").font(.caption).foregroundStyle(.secondary)
+                        Text("每行一个目标，最多 8 个，可附加端口或范围。\n例如 example.com:443、192.0.2.0/24:8000-8100、[2001:db8::/64]:443").font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity)
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Clash DNS（可选）").font(.subheadline.weight(.medium))

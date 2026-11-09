@@ -172,7 +172,7 @@ Status includes `owner-pid` for these sessions. The session owner and root may s
 the backend through `stop-on-demand`. Persistent settings are rejected by on-demand
 sessions. The standalone service commands retain their existing behavior.
 
-`make check-gui` exercises preference validation, the generated Clash script in
+`make check-gui` exercises IPv4/IPv6 target validation, CIDR masking, port conditions, the generated Clash script in
 JavaScriptCore, the real Unix HTTP controller against an offline server, durable
 selector recovery, public HTTPS probes and moved-application resource lookup.
 Only the GUI session owner may control its on-demand backend, including when that

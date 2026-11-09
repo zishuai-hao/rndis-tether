@@ -11,11 +11,11 @@ gui_sdk="$(xcrun --show-sdk-path)"
 for gui_arch in arm64 x86_64; do
     xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -O \
         -sdk "$gui_sdk" -target "$gui_arch-apple-macosx13.0" \
-        gui/Shared.swift gui/DemandPreferences.swift gui/ClashControl.swift gui/TrustedPaths.swift gui/PhoneStatus.swift gui/HTTPSProbe.swift gui/Helper.swift \
+        gui/Shared.swift gui/RoutingTarget.swift gui/DemandPreferences.swift gui/ClashControl.swift gui/TrustedPaths.swift gui/PhoneStatus.swift gui/HTTPSProbe.swift gui/Helper.swift \
         -o "$gui_build/helper-$gui_arch"
     xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -O \
         -sdk "$gui_sdk" -target "$gui_arch-apple-macosx13.0" \
-        gui/Shared.swift gui/DemandPreferences.swift gui/ClashControl.swift gui/DemandModel.swift gui/App.swift -o "$gui_build/app-$gui_arch"
+        gui/Shared.swift gui/RoutingTarget.swift gui/DemandPreferences.swift gui/ClashControl.swift gui/DemandModel.swift gui/App.swift -o "$gui_build/app-$gui_arch"
 done
 lipo -create "$gui_build/helper-arm64" "$gui_build/helper-x86_64" -output "$gui_app/Contents/Resources/rndis-tether-gui-helper"
 lipo -create "$gui_build/app-arm64" "$gui_build/app-x86_64" -output "$gui_app/Contents/MacOS/RNDISTetherGUI"
