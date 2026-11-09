@@ -39,6 +39,7 @@
 #define NETWORK_HOOK_SIZE 256 /* path plus NUL; fits one CONFIG_LINE_SIZE setting */
 
 typedef struct {
+    pid_t owner_pid; /* runtime-only: on-demand GUI owner, zero for the legacy service */
     bool prefer_phone, ipv6, verbose;
     unsigned tx_batch; /* 0 = auto: what the phone allows, up to TX_BATCH_MAX */
     char host[IFNAMSIZ], peer[IFNAMSIZ];

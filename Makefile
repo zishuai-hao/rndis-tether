@@ -14,7 +14,7 @@ HEADERS = $(wildcard src/*.h)
 ARCHIVE = rndis-tether-macos.tar.gz
 VERSION := $(shell sed -n 's/^\#define VERSION "\(.*\)"/\1/p' src/config.h)
 
-.PHONY: all check check-examples check-gui check-gui-dns gui asan analyze dist clean
+.PHONY: all check check-examples check-gui gui asan analyze dist clean
 all: rndis-tether
 
 rndis-tether: $(SOURCES) $(HEADERS)
@@ -73,19 +73,15 @@ gui:
 
 check-gui:
 	mkdir -p build/gui
-	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/RoutePolicy.swift tests/gui/PolicyTests.swift -o build/gui/policy-tests
-	./build/gui/policy-tests
+	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/DemandPreferences.swift gui/ClashControl.swift tests/gui/DemandTests.swift -o build/gui/demand-tests
+	./build/gui/demand-tests
+	python3 tests/gui/ClashControlIntegration.py build/gui/demand-tests
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/TrustedPaths.swift tests/gui/TrustedPathsTests.swift -o build/gui/trusted-path-tests
 	./build/gui/trusted-path-tests
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library -Onone -g gui/Shared.swift gui/HTTPSProbe.swift tests/gui/HTTPSProbeTests.swift -o build/gui/https-probe-tests
 	./build/gui/https-probe-tests
 	xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library gui/Shared.swift tests/gui/ResourcePathProbe.swift -o build/gui/resource-path-probe
 	python3 tests/gui/ResourcePathTest.py build/gui/resource-path-probe
-
-# Optional real-system checks. Set GUI_DNS_TARGET and GUI_DNS_SERVER to test DNS;
-# GUI_REQUIRE_HTTPS=yes additionally requires an installed route and a public USB HTTPS probe.
-check-gui-dns:
-	python3 tests/gui/DNSIntegration.py
 
 ASAN_CFLAGS = $(TEST_CFLAGS) -fsanitize=address
 asan: $(SELFTEST) $(CONTROLTEST) $(SESSIONTEST) $(BRINGUPTEST) $(HOOKTEST) $(USBMATCHTEST) $(HEADERS)

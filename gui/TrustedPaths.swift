@@ -29,7 +29,7 @@ func trustedDirectory(_ path: String, create: Bool = false, mode: mode_t = 0o755
 
 func checkSystemDirectories() throws {
     for path in ["/var/db", "/etc", "/Library"] { try trustedDirectory(path) }
-    for path in [Paths.stateDir, "/Library/PrivilegedHelperTools", "/etc/resolver"] {
+    for path in [LegacyPaths.stateDir, "/Library/PrivilegedHelperTools", "/etc/resolver"] {
         if FileManager.default.fileExists(atPath: path) { try trustedDirectory(path) }
     }
 }

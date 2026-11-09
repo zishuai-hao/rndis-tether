@@ -166,10 +166,17 @@ for the generic implementation still require a real phone and administrator acce
 
 ## Optional native GUI
 
-`gui/` is a separate SwiftUI application, built with `make gui`; it does not change
-the C daemon's language, dependencies, threading or run loop. `make check-gui`
-exercises the native route policy with a fake network, including reconnects, DNS
-failures, changed routers, partial failures, checkpoints and route ownership.
-The application includes the universal C CLI and a universal Swift helper; its
-only runtime dependencies are macOS system frameworks. See `gui/README.md` for
-packaging, administrator authorization, fixed paths and scoped-DNS ownership.
+`gui/` is a separate SwiftUI application, built with `make gui`. Its on-demand backend
+uses `run-on-demand OWNER_PID` and stops when the owning non-root process exits.
+Status includes `owner-pid` for these sessions. The session owner and root may stop
+the backend through `stop-on-demand`. Persistent settings are rejected by on-demand
+sessions. The standalone service commands retain their existing behavior.
+
+`make check-gui` exercises preference validation, the generated Clash script in
+JavaScriptCore, the real Unix HTTP controller against an offline server, durable
+selector recovery, public HTTPS probes and moved-application resource lookup.
+Only the GUI session owner may control its on-demand backend, including when that
+user is a standard account. Test real USB reconnects, GUI exit and unexpected GUI
+termination after administrator authorization. Check that the backend's sockets and
+owned interfaces disappear, and that Clash returns to its previous selector choice.
+See `gui/README.md` for setup, migration and the remaining runtime files.

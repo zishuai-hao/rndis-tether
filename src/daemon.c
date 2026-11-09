@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <libproc.h>
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
@@ -36,6 +37,8 @@ static const int STOP_SIGNALS[] = {SIGTERM, SIGINT, SIGHUP};
 
 static struct {
     Config cfg;
+    uid_t owner_uid;
+    gid_t owner_gid;
     char settings_problem[CONFIG_PROBLEM_SIZE];
 
     IONotificationPortRef port;
@@ -343,6 +346,28 @@ static void watch_signal(int signal_number) {
     dispatch_resume(source);
 }
 
+static bool watch_owner(pid_t owner) {
+    struct proc_bsdinfo before, after;
+    int size = (int)sizeof before;
+    if (proc_pidinfo(owner, PROC_PIDTBSDINFO, 0, &before, size) != size || !before.pbi_uid) return false;
+    dispatch_source_t source = dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, (uintptr_t)owner,
+                                                      DISPATCH_PROC_EXIT, dispatch_get_main_queue());
+    if (!source) return false;
+    dispatch_set_context(source, (void *)(intptr_t)SIGTERM);
+    dispatch_source_set_event_handler_f(source, on_signal);
+    dispatch_resume(source);
+    if (proc_pidinfo(owner, PROC_PIDTBSDINFO, 0, &after, size) != size ||
+        before.pbi_uid != after.pbi_uid || before.pbi_start_tvsec != after.pbi_start_tvsec ||
+        before.pbi_start_tvusec != after.pbi_start_tvusec) {
+        dispatch_source_cancel(source);
+        dispatch_release(source);
+        return false;
+    }
+    g.owner_uid = (uid_t)before.pbi_uid;
+    g.owner_gid = (gid_t)before.pbi_gid;
+    return true;
+}
+
 /* ------------------------------------------------------------------ status */
 
 static size_t status_report(char *buffer, size_t size) {
@@ -359,6 +384,7 @@ static size_t status_report(char *buffer, size_t size) {
         .session = active ? &session : NULL,
     };
     StatusReport report = {
+        .owner_pid = g.cfg.owner_pid,
         .prefer_phone = g.cfg.prefer_phone,
         .settings_problem = g.settings_problem[0] ? g.settings_problem : NULL,
     };
@@ -399,7 +425,23 @@ static bool set_paused(uid_t uid, const char *value, char *why, size_t why_size)
 
 /* From the admin socket: a setting the service applies at once, also saved in the file. */
 static bool change_setting(uid_t uid, const char *name, const char *value, char *why, size_t why_size) {
+    if (g.cfg.owner_pid > 0 && uid != 0 && uid != g.owner_uid) {
+        snprintf(why, why_size, "only the session owner may control it");
+        return false;
+    }
+    if (g.cfg.owner_pid > 0 && !strcmp(name, "stop-on-demand")) {
+        if (strcmp(value, "yes")) {
+            snprintf(why, why_size, "stop-on-demand expects yes");
+            return false;
+        }
+        dispatch_async_f(dispatch_get_main_queue(), (void *)(intptr_t)SIGTERM, on_signal);
+        return true;
+    }
     if (!strcmp(name, ADMIN_SETTING_PAUSED)) return set_paused(uid, value, why, why_size);
+    if (g.cfg.owner_pid > 0) {
+        snprintf(why, why_size, "on-demand sessions use runtime settings only");
+        return false;
+    }
     Config running = g.cfg; /* options of a foreground `run` stay as they are */
     if (!config_set_live(&running, name, value, why, why_size)) return false;
     Config file; /* what the settings file holds, rewritten whole by config_save */
@@ -418,7 +460,8 @@ static bool change_setting(uid_t uid, const char *name, const char *value, char 
 
 static void serve_admin(void) {
     const struct group *admin = getgrnam("admin");
-    if (!admin || !admin_serve(RUNTIME_DIR, ADMIN_SOCKET, admin->gr_gid, change_setting))
+    gid_t group = g.cfg.owner_pid > 0 ? g.owner_gid : admin ? admin->gr_gid : (gid_t)-1;
+    if (group == (gid_t)-1 || !admin_serve(RUNTIME_DIR, ADMIN_SOCKET, group, change_setting))
         logmsg("warning: settings can be changed only with sudo and a restart: %s",
                admin ? strerror(errno) : "no admin group");
 }
@@ -440,6 +483,10 @@ int daemon_run(const Config *cfg, const char *settings_problem) {
     if (geteuid() != 0) {
         fputs("rndis-tether run needs root. Normally the background service runs it:\n"
               "  sudo rndis-tether install\n", stderr);
+        return 1;
+    }
+    if (cfg->owner_pid > 0 && !watch_owner(cfg->owner_pid)) {
+        fputs("On-demand owner is no longer running or is invalid.\n", stderr);
         return 1;
     }
     if (!take_lock()) {

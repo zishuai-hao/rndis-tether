@@ -13,6 +13,7 @@ int cli_status(bool raw);
 int cli_monitor(void);
 /* disconnect (true) or connect (false), through the running service; no file changes. */
 int cli_set_paused(bool paused);
+int cli_stop_on_demand(void);
 int cli_config(int argc, char **argv); /* arguments after "config" */
 
 #endif

@@ -9,6 +9,9 @@
 #include "usb.h"
 
 #include <stdio.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int list_devices(void) {
@@ -49,6 +52,8 @@ static int usage(FILE *out, int code) {
           "  sudo rndis-tether restart           restart the service (after editing " CONFIG_PATH ")\n"
           "  rndis-tether list                   USB tethering devices connected right now\n"
           "  rndis-tether version\n"
+          "  sudo rndis-tether run-on-demand PID  USB session tied to a non-root GUI process\n"
+          "  rndis-tether stop-on-demand          stop the current on-demand session\n"
           "\n"
           "Troubleshooting, with the service stopped (sudo launchctl bootout " SERVICE_TARGET "):\n"
           "  sudo rndis-tether run [--verbose] [--no-prefer] [--ipv6] [--tx-batch N] [--host fethN] [--peer fethM]\n",
@@ -85,6 +90,19 @@ static int run(int argc, char **argv) {
 
 int main(int argc, char **argv) {
     const char *command = argc > 1 ? argv[1] : "help";
+    if (!strcmp(command, "run-on-demand")) {
+        if (argc != 3) return usage(stderr, 2);
+        char *end = NULL;
+        errno = 0;
+        long owner = strtol(argv[2], &end, 10);
+        if (errno || !*argv[2] || *end || owner <= 1 || owner > INT_MAX) return usage(stderr, 2);
+        Config cfg;
+        config_defaults(&cfg);
+        cfg.owner_pid = (pid_t)owner;
+        cfg.ipv6 = true;
+        cfg.prefer_phone = false;
+        return daemon_run(&cfg, "");
+    }
     if (!strcmp(command, "run")) return run(argc - 2, argv + 2);
     if (!strcmp(command, "config")) return cli_config(argc - 2, argv + 2);
     if (!strcmp(command, "status") && argc == 3 && !strcmp(argv[2], "--raw")) return cli_status(true);
@@ -93,6 +111,7 @@ int main(int argc, char **argv) {
     if (!strcmp(command, "monitor")) return cli_monitor();
     if (!strcmp(command, "disconnect")) return cli_set_paused(true);
     if (!strcmp(command, "connect")) return cli_set_paused(false);
+    if (!strcmp(command, "stop-on-demand")) return cli_stop_on_demand();
     if (!strcmp(command, "install")) return cli_install();
     if (!strcmp(command, "uninstall")) return cli_uninstall();
     if (!strcmp(command, "restart")) return cli_restart();

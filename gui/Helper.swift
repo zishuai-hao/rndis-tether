@@ -2,246 +2,190 @@ import Foundation
 import Darwin
 
 private let fileManager = FileManager.default
-
-private func checkFile(_ path: String) throws {
-    var info = stat()
-    if lstat(path, &info) != 0 {
-        if errno == ENOENT { return }
-        throw TetherError("无法检查 \(path)")
-    }
-    guard info.st_mode & S_IFMT == S_IFREG, info.st_uid == 0, info.st_mode & 0o022 == 0,
-          info.st_size <= 2_000_000 else { throw TetherError("文件必须是 root 所有的普通文件，且不可由其他用户修改：\(path)") }
-}
-
-private func atomicWrite(_ data: Data, path: String, mode: mode_t = 0o644) throws {
-    try trustedDirectory(URL(fileURLWithPath: path).deletingLastPathComponent().path)
-    try checkFile(path)
-    // mkstemp in the trusted destination directory; never follow a .new symlink.
-    var template = Array((path + ".XXXXXX").utf8CString)
-    let descriptor = mkstemp(&template)
-    guard descriptor >= 0 else { throw TetherError("无法暂存 \(path)") }
-    let temporary = String(cString: template)
-    defer { close(descriptor); unlink(temporary) }
-    try data.withUnsafeBytes { raw in
-        var offset = 0
-        while offset < raw.count {
-            let count = write(descriptor, raw.baseAddress!.advanced(by: offset), raw.count - offset)
-            if count < 0 && errno == EINTR { continue }
-            guard count > 0 else { throw TetherError("写入失败：\(path)") }
-            offset += count
-        }
-    }
-    guard fchmod(descriptor, mode) == 0, fchown(descriptor, 0, 0) == 0, fsync(descriptor) == 0,
-          rename(temporary, path) == 0 else { throw TetherError("无法保存 \(path)") }
-}
+private let runtimeDirectory = "/var/db/rndis-tether"
+private let backupPath = runtimeDirectory + "/legacy-backup.json"
+private let resolverMarker = "# Managed by RNDIS Tether GUI\n"
 
 private func rootRequired() throws {
     guard geteuid() == 0 else { throw TetherError("此操作需要管理员授权。") }
 }
 
-private func withLock(_ operation: () throws -> Void) throws {
+private func checkedSystemFile(_ path: String) throws {
+    var info = stat()
+    if lstat(path, &info) != 0 {
+        if errno == ENOENT { return }
+        throw TetherError("无法检查系统文件：\(path)")
+    }
+    guard info.st_uid == 0, info.st_mode & S_IFMT == S_IFREG,
+          info.st_mode & 0o022 == 0, info.st_size <= 4_000_000 else {
+        throw TetherError("系统文件权限或类型不安全：\(path)")
+    }
+}
+
+private func writeSystemFile(_ data: Data, path: String, mode: mode_t) throws {
+    try trustedDirectory((path as NSString).deletingLastPathComponent)
+    try checkedSystemFile(path)
+    var name = Array((path + ".XXXXXX").utf8CString)
+    let descriptor = mkstemp(&name)
+    guard descriptor >= 0 else { throw TetherError("无法创建系统文件暂存。") }
+    let temporary = String(cString: name)
+    defer { close(descriptor); unlink(temporary) }
+    try data.withUnsafeBytes { buffer in
+        var offset = 0
+        while offset < buffer.count {
+            let count = Darwin.write(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+            if count < 0 && errno == EINTR { continue }
+            guard count > 0 else { throw TetherError("系统文件写入失败。") }
+            offset += count
+        }
+    }
+    guard fchmod(descriptor, mode) == 0, fchown(descriptor, 0, 0) == 0,
+          fsync(descriptor) == 0, rename(temporary, path) == 0 else { throw TetherError("系统文件保存失败。") }
+}
+
+private func withMigrationLock(_ action: () throws -> Void) throws {
     try rootRequired()
-    try trustedDirectory(Paths.stateDir, create: true, mode: 0o700)
-    let descriptor = open(Paths.stateDir + "/lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
-    guard descriptor >= 0 else { throw TetherError("无法打开路由策略锁。") }
+    try trustedDirectory(runtimeDirectory, create: true, mode: 0o700)
+    let descriptor = open(runtimeDirectory + "/on-demand.lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
+    guard descriptor >= 0 else { throw TetherError("无法创建按需连接锁。") }
     defer { close(descriptor) }
     var info = stat()
     guard fstat(descriptor, &info) == 0, info.st_uid == 0, info.st_mode & S_IFMT == S_IFREG,
-          info.st_mode & 0o077 == 0 else { throw TetherError("路由策略锁权限不安全。") }
-    guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
-        // The daemon will retry a coalesced event; an interactive action must report busy.
-        if CommandLine.arguments.count == 2 && CommandLine.arguments[1].hasPrefix("feth") { return }
-        throw TetherError("另一个配置或路由更新正在执行，请稍后重试。")
+          info.st_mode & 0o077 == 0, flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+        throw TetherError("另一个连接或迁移操作正在进行。")
     }
     defer { flock(descriptor, LOCK_UN) }
-    try operation()
+    try action()
 }
 
-private func loadState() throws -> RouteState {
-    try checkFile(Paths.state)
-    guard let data = fileManager.contents(atPath: Paths.state) else { return RouteState() }
-    return try JSONDecoder().decode(RouteState.self, from: data)
-}
+private let oldFiles = [LegacyPaths.config, LegacyPaths.daemonConfig, LegacyPaths.helper,
+                        LegacyPaths.daemon, LegacyPaths.state,
+                        "/Library/LaunchDaemons/io.github.stlk0.rndis-tether.plist"]
 
-private func updateRoutes(_ config: GUIConfig, interface: String, clear: Bool = false) throws {
-    var state = try loadState()
-    let persist = { try atomicWrite(JSONEncoder().encode(state), path: Paths.state, mode: 0o600) }
-    do {
-        let messages = try reconcile(&state, interface: interface,
-            targets: !clear && config.enabled ? config.targets : [], system: MacRouteSystem(),
-            now: Date().timeIntervalSince1970,
-            forceDNS: ProcessInfo.processInfo.environment["RNDIS_TETHER_EVENT"] == "refresh",
-            checkpoint: { try atomicWrite(JSONEncoder().encode($0), path: Paths.state, mode: 0o600) })
-        try persist()
-        for message in messages { FileHandle.standardError.write(Data(("rndis GUI route: " + message + "\n").utf8)) }
-    } catch {
-        try persist()
-        throw error
-    }
-}
+private struct SystemBackup: Codable {
+    let path: String
+    let data: Data?
+    let mode: mode_t
 
-private func daemonSettings() throws -> [String: String] {
-    var values: [String: String] = [:]
-    guard let data = fileManager.contents(atPath: Paths.daemonConfig) else { return values }
-    for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
-        let value = line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
-        let pair = value.split(separator: "=", maxSplits: 1)
-        if value.trimmingCharacters(in: .whitespaces).isEmpty { continue }
-        guard pair.count == 2 else { throw TetherError("现有 rndis-tether.conf 包含无效配置，请先修复。") }
-        values[String(pair[0]).trimmingCharacters(in: .whitespaces)] = String(pair[1]).trimmingCharacters(in: .whitespaces)
-    }
-    return values
-}
-
-private func managedResolvers(_ config: GUIConfig?) -> [String] {
-    guard let config = config, config.enabled, !config.dnsServer.isEmpty else { return [] }
-    return config.targets.filter { ipv6($0) == nil && validHostname($0) }.map { "/etc/resolver/" + $0 }
-}
-
-private struct Backup {
-    var path: String
-    var data: Data?
-    var mode: mode_t
     init(_ path: String) throws {
+        try checkedSystemFile(path)
         self.path = path
-        try checkFile(path)
         var info = stat()
         mode = lstat(path, &info) == 0 ? info.st_mode & 0o777 : 0o644
         data = fileManager.contents(atPath: path)
     }
+
     func restore() throws {
-        if let data = data { try atomicWrite(data, path: path, mode: mode) }
-        else if fileManager.fileExists(atPath: path) { try fileManager.removeItem(atPath: path) }
+        if let data = data { try writeSystemFile(data, path: path, mode: mode) }
+        else if fileManager.fileExists(atPath: path) { try checkedSystemFile(path); try fileManager.removeItem(atPath: path) }
     }
 }
 
-private func install(resources: String, config: GUIConfig) throws {
-    try withLock {
-        let bundleCLI = resources + "/rndis-tether"
-        let bundleHelper = resources + "/rndis-tether-gui-helper"
-        guard fileManager.isExecutableFile(atPath: bundleCLI), fileManager.isExecutableFile(atPath: bundleHelper) else {
-            throw TetherError("应用资源不完整，请重新解压完整的 .app。")
+private func ownedResolvers() throws -> [String] {
+    guard fileManager.fileExists(atPath: "/etc/resolver") else { return [] }
+    try trustedDirectory("/etc/resolver")
+    return try fileManager.contentsOfDirectory(atPath: "/etc/resolver").compactMap { name in
+        guard validHostname(name) else { return nil }
+        let path = "/etc/resolver/" + name
+        guard (try? checkedSystemFile(path)) != nil,
+              let data = fileManager.contents(atPath: path),
+              String(decoding: data, as: UTF8.self).hasPrefix(resolverMarker) else { return nil }
+        return path
+    }
+}
+
+private func waitForStop(cli: String) throws {
+    let deadline = Date().addingTimeInterval(12)
+    while Date() < deadline {
+        if fields(try command(cli, ["status", "--raw"]).text)["protocol"] == nil { return }
+        usleep(100_000)
+    }
+    throw TetherError("USB 后台尚未停止，请稍后重试。")
+}
+
+private func startDemand(resources: String, owner: Int32) throws {
+    try withMigrationLock {
+        guard owner > 1, kill(owner, 0) == 0 else { throw TetherError("前端进程已退出。") }
+        let cli = resources + "/rndis-tether"
+        guard fileManager.isExecutableFile(atPath: cli) else { throw TetherError("应用缺少 USB 后台程序。") }
+        let status = fields(try command(cli, ["status", "--raw"]).text)
+        if let activeOwner = status["owner-pid"] {
+            guard activeOwner == String(owner) else { throw TetherError("另一个前端已启动连接，请先退出该前端。") }
+            print("按需连接已运行。")
+            return
         }
-        try trustedDirectory("/Library/PrivilegedHelperTools", create: true)
-        let oldConfig = GUIConfig.load()
-        if fileManager.fileExists(atPath: Paths.config) && oldConfig == nil { throw TetherError("现有 GUI 配置无法读取，未覆盖。") }
-        let newResolvers = managedResolvers(config)
-        let allResolvers = Array(Set(managedResolvers(oldConfig) + newResolvers))
-        if !allResolvers.isEmpty { try trustedDirectory("/etc/resolver", create: true) }
-        // A domain-specific resolver is explicitly opt-in. Never overwrite a resolver
-        // managed by a VPN, the administrator, or the earlier command-line example.
-        for path in allResolvers {
-            try checkFile(path)
-            if let data = fileManager.contents(atPath: path),
-               !String(decoding: data, as: UTF8.self).hasPrefix(Paths.resolverMarker) {
-                throw TetherError("\(path) 已由其他配置管理。请留空专用 DNS，或先自行迁移该文件。")
-            }
-        }
-        var settings = try daemonSettings()
-        let interface = settings["host-interface"] ?? "feth50"
-        guard matches(interface, "^feth[0-9]{1,10}$") else { throw TetherError("现有 host-interface 无效。") }
-        let paths = [Paths.config, Paths.daemonConfig, Paths.helper, Paths.daemon,
-            "/Library/LaunchDaemons/io.github.stlk0.rndis-tether.plist"] + allResolvers
-        let backups = try paths.map(Backup.init)
+        let hasLegacy = oldFiles.contains { fileManager.fileExists(atPath: $0) }
+        if status["protocol"] != nil && !hasLegacy { throw TetherError("已有手工启动的 USB 后台，请先结束它。") }
+        let resolvers = try ownedResolvers()
+        let backups = try (oldFiles + resolvers).map(SystemBackup.init)
+        let child = Process()
         do {
-            if let oldConfig = oldConfig { try updateRoutes(oldConfig, interface: interface, clear: true) }
-            try atomicWrite(Data(contentsOf: URL(fileURLWithPath: bundleHelper)), path: Paths.helper, mode: 0o755)
-            try atomicWrite(config.encoded(), path: Paths.config)
-            for path in allResolvers {
-                if newResolvers.contains(path) {
-                    // /etc/resolver otherwise inherits the IPv4 primary network's
-                    // A-only query flags. Explicit AAAA is required for ordinary
-                    // getaddrinfo clients using SuppressUnusable (including curl).
-                    try atomicWrite(Data((Paths.resolverMarker + "nameserver \(config.dnsServer)\nflags a aaaa\n").utf8), path: path)
-                } else { try fileManager.removeItem(atPath: path) }
+            if hasLegacy || !resolvers.isEmpty {
+                try writeSystemFile(JSONEncoder().encode(backups), path: backupPath, mode: 0o600)
+                _ = try checked(cli, ["uninstall"], timeout: 45)
+                try waitForStop(cli: cli)
+                for path in [LegacyPaths.config, LegacyPaths.helper, LegacyPaths.state] + resolvers {
+                    try checkedSystemFile(path)
+                    if fileManager.fileExists(atPath: path) { try fileManager.removeItem(atPath: path) }
+                }
             }
-            settings["prefer-phone"] = config.preferPhone ? "yes" : "no"
-            settings["ipv6"] = "yes"
-            settings["network-hook"] = config.enabled ? Paths.helper : "none"
-            let text = settings.keys.sorted().map { "\($0) = \(settings[$0]!)" }.joined(separator: "\n") + "\n"
-            try atomicWrite(Data(text.utf8), path: Paths.daemonConfig)
-            // The existing installer provides the launchd job and root-owned daemon.
-            // Invoke once after all settings are ready, avoiding three restarts.
-            _ = try checked(bundleCLI, ["install"], timeout: 45)
-            // Startup/network hooks can run while this installer holds the lock
-            // and intentionally skip work. Reconcile once before releasing it so
-            // a connected phone need not wait for the five-minute refresh.
-            try updateRoutes(config, interface: interface)
+            child.executableURL = URL(fileURLWithPath: cli)
+            child.arguments = ["run-on-demand", String(owner)]
+            child.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C"]
+            child.standardInput = FileHandle.nullDevice
+            child.standardOutput = FileHandle.nullDevice
+            child.standardError = FileHandle.nullDevice
+            try child.run()
+            let deadline = Date().addingTimeInterval(5)
+            while Date() < deadline {
+                guard child.isRunning else { throw TetherError("按需 USB 后台启动失败。") }
+                if fields(try command(cli, ["status", "--raw"]).text)["owner-pid"] == String(owner) {
+                    print("按需 USB 连接已启动，退出前端后自动停止。")
+                    if hasLegacy { print("旧版配置备份：\(backupPath)") }
+                    return
+                }
+                usleep(100_000)
+            }
+            throw TetherError("等待按需 USB 后台超时。")
         } catch {
-            let original = error
-            _ = try? command("/bin/launchctl", ["bootout", "system/io.github.stlk0.rndis-tether"])
+            if child.isRunning {
+                child.terminate()
+                let deadline = Date().addingTimeInterval(8)
+                while child.isRunning && Date() < deadline { usleep(100_000) }
+                if child.isRunning { kill(child.processIdentifier, SIGKILL); child.waitUntilExit() }
+            }
             var failures: [String] = []
             for backup in backups {
                 do { try backup.restore() } catch { failures.append(backup.path) }
             }
-            if fileManager.isExecutableFile(atPath: Paths.daemon) {
-                do { _ = try checked(Paths.daemon, ["install"], timeout: 45) }
-                catch { failures.append("后台服务重新启动") }
-            }
-            throw TetherError(original.localizedDescription + (failures.isEmpty ? "\n已恢复原有配置。" : "\n部分恢复失败：" + failures.joined(separator: ", ")))
-        }
-        print("后台服务和路由配置已保存。手机重连后会自动更新路由。")
-    }
-}
-
-private func uninstall() throws {
-    try withLock {
-        if let config = GUIConfig.load() {
-            let interface = try daemonSettings()["host-interface"] ?? "feth50"
-            try updateRoutes(config, interface: interface, clear: true)
-            for path in managedResolvers(config) {
-                if let data = fileManager.contents(atPath: path), String(decoding: data, as: UTF8.self).hasPrefix(Paths.resolverMarker) {
-                    try fileManager.removeItem(atPath: path)
+            if status["protocol"] != nil && fileManager.isExecutableFile(atPath: LegacyPaths.daemon) {
+                do {
+                    _ = try checked(LegacyPaths.daemon, ["install"], timeout: 45)
+                    if status["paused"] == "yes" { _ = try checked(LegacyPaths.daemon, ["disconnect"]) }
                 }
+                catch { failures.append("旧版后台重新启动") }
             }
+            throw TetherError(error.localizedDescription + (failures.isEmpty ? " 已恢复迁移前配置。" : " 部分恢复失败：" + failures.joined(separator: ", ")))
         }
-        if fileManager.isExecutableFile(atPath: Paths.daemon) { _ = try checked(Paths.daemon, ["uninstall"], timeout: 45) }
-        for path in [Paths.config, Paths.helper, Paths.state] {
-            try checkFile(path)
-            if fileManager.fileExists(atPath: path) { try fileManager.removeItem(atPath: path) }
-        }
-        print("已卸载后台服务，并清理 GUI 管理的路由与 DNS 配置。")
     }
 }
 
-private func diagnose(_ config: GUIConfig, interface: String, testHTTPS: Bool = false) throws -> Bool {
-    let system = MacRouteSystem()
-    let gateway = try system.gateway(interface)
-    let saved = GUIConfig.load() == config
-    var ready = gateway != nil
-    print("USB 接口：\(interface)")
-    print("手机 IPv6 网关：\(gateway ?? "未就绪；请保持移动数据开启、手机 Wi-Fi 关闭，并开启 USB 网络共享。")")
-    print("配置：\(saved ? "已保存到磁盘；重新打开应用会恢复" : "当前为未应用的草稿")")
-    print("DNS：\(config.dnsServer.isEmpty ? "系统 DNS" : config.dnsServer + (saved ? "（已保存）" : "（尚未应用）"))")
-    print("本次解析使用 macOS 当前解析配置；未保存的 DNS 不会用于本次查询。")
-    for target in config.targets {
-        print("\n目标：\(target)")
-        do {
-            for address in try system.resolve(target) {
-                let hop = try system.route(address)
-                if let hop = hop {
-                    print("  \(address)  →  \(hop.interface) / \(hop.gateway)")
-                    if hop != Hop(interface: interface, gateway: gateway ?? "") { ready = false }
-                } else { ready = false; print("  \(address)  →  当前无独立 /128 路由；解析成功，路由尚未就绪") }
-            }
-        } catch { ready = false; print("  " + error.localizedDescription + " 请检查已应用的 DNS 配置。") }
-    }
-    print("\n目标 DNS / 路由：\(ready ? "通过" : "尚未通过")。")
-    if testHTTPS {
-        print("\n手机公网 IPv6 HTTPS（并行探测，绑定 \(interface)）：")
-        let probes = publicHTTPSProbes(interface: interface)
-        for probe in probes {
-            print("  https://\(probe.host)/：\(probe.passed ? "通过" : "未通过")\n  \(probe.detail)")
+private func restoreLegacy(resources: String) throws {
+    try withMigrationLock {
+        try checkedSystemFile(backupPath)
+        let backups = try JSONDecoder().decode([SystemBackup].self, from: Data(contentsOf: URL(fileURLWithPath: backupPath)))
+        guard backups.count <= 64, backups.allSatisfy({ entry in
+            oldFiles.contains(entry.path) || (entry.path.hasPrefix("/etc/resolver/") && validHostname(String(entry.path.dropFirst("/etc/resolver/".count))))
+        }) else { throw TetherError("迁移备份路径无效。") }
+        let cli = resources + "/rndis-tether"
+        _ = try checked(cli, ["stop-on-demand"])
+        try waitForStop(cli: cli)
+        for backup in backups { try backup.restore() }
+        if fileManager.isExecutableFile(atPath: LegacyPaths.daemon) {
+            _ = try checked(LegacyPaths.daemon, ["install"], timeout: 45)
         }
-        let passed = probes.filter { $0.passed }.count
-        print("公网 HTTPS：\(passed)/\(probes.count) 通过；至少一个通过即可确认手机 IPv6 HTTPS 出口可用。")
-        ready = ready && passed > 0
-        print("公共探测使用手机接口 DNS 获取 AAAA，并固定地址、绑定 USB 接口；保留 TLS 证书校验。")
-        print("本次未探测目标服务器的 HTTPS 服务；公共站点通过不代表目标服务器可访问。")
+        print("迁移前的系统配置已恢复。")
     }
-    print("\n结果：\(ready ? (testHTTPS ? "目标路由与公共 HTTPS 探测通过" : "目标路由检查通过") : "尚未通过：请查看以上未就绪或失败项")。")
-    print(testHTTPS ? "探测不使用代理或登录凭据，也不修改路由或 DNS；只有点击探测时才访问公共站点。" : "本次未测试 HTTPS。可点击“探测公网 HTTPS”检查手机 IPv6 出口。")
-    return ready
 }
 
 @main
@@ -251,25 +195,42 @@ struct HelperMain {
             let args = Array(CommandLine.arguments.dropFirst())
             if args == ["check-system-paths"] {
                 try checkSystemDirectories()
-                print("系统目录检查通过（只读，无需管理员授权）。")
-            } else if args.count == 3 && args[0] == "install" {
-                guard let data = Data(base64Encoded: args[2]) else { throw TetherError("配置编码无效。") }
-                try install(resources: args[1], config: JSONDecoder().decode(GUIConfig.self, from: data).validated())
-            } else if args.count == 2 && args[0] == "resolve" && (validHostname(args[1]) || ipv6(args[1]) != nil) {
-                print(try resolveAddresses(args[1]).joined(separator: "\n"))
-            } else if args == ["uninstall"] {
-                try uninstall()
-            } else if (args.count == 3 || (args.count == 4 && args[3] == "--https")) && args[0] == "diagnose" && matches(args[2], "^feth[0-9]{1,10}$") {
-                guard let data = Data(base64Encoded: args[1]) else { throw TetherError("配置编码无效。") }
-                if try !diagnose(JSONDecoder().decode(GUIConfig.self, from: data).validated(), interface: args[2], testHTTPS: args.count == 4) { exit(2) }
-            } else if args.count == 1 && matches(args[0], "^feth[0-9]{1,10}$") {
-                try withLock {
-                    try checkFile(Paths.config)
-                    guard let config = GUIConfig.load() else { throw TetherError("无法读取路由配置。") }
-                    try updateRoutes(config.validated(), interface: args[0])
+                print("系统目录检查通过（只读）。")
+            } else if args.count == 3, args[0] == "start-demand", let owner = Int32(args[2]) {
+                try startDemand(resources: args[1], owner: owner)
+            } else if args.count == 2, args[0] == "restore-legacy" {
+                try restoreLegacy(resources: args[1])
+            } else if args.count == 2, args[0] == "watch-demand", let owner = Int32(args[1]), owner > 1, getuid() != 0 {
+                while getppid() == owner { sleep(1) }
+                for attempt in 0..<20 {
+                    do { try ClashControl.restore(owner: owner); break }
+                    catch { if attempt < 19 { sleep(3) } }
                 }
+            } else if (args.count == 2 || (args.count == 3 && args[2] == "--https")),
+                      args[0] == "diagnose-demand", matches(args[1], "^feth[0-9]{1,10}$") {
+                let interface = args[1]
+                let gateway = try phoneIPv6Gateway(interface)
+                var ready = gateway != nil
+                print("USB 接口：\(interface)\n手机 IPv6 网关：\(gateway ?? "未就绪")")
+                if !DemandPreferences.load().targets.isEmpty {
+                    do {
+                        let selection = try ClashControl.discover().selection()
+                        print("Clash 分流组：\(selection)")
+                        if selection != ClashControl.usb { ready = false }
+                    } catch { ready = false; print(error.localizedDescription) }
+                } else {
+                    print("Clash 分流：尚未配置目标")
+                }
+                if args.count == 3 {
+                    let probes = publicHTTPSProbes(interface: interface)
+                    for probe in probes { print("https://\(probe.host)/：\(probe.passed ? "通过" : "未通过")\n\(probe.detail)") }
+                    ready = ready && probes.contains { $0.passed }
+                }
+                print("结果：\(ready ? "手机与 Clash 分流检查通过" : "尚未通过，请检查以上项目")。")
+                print("用户配置：\(UserFiles.settings.path)\nClash 脚本：\(UserFiles.clashScript.path)")
+                if !ready { exit(2) }
             } else {
-                throw TetherError("Usage: rndis-tether-gui-helper fethN | install RESOURCES BASE64_CONFIG | uninstall | diagnose BASE64_CONFIG fethN")
+                throw TetherError("Usage: helper start-demand RESOURCES OWNER_PID | restore-legacy RESOURCES | watch-demand OWNER_PID | diagnose-demand fethN [--https]")
             }
         } catch {
             FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8))

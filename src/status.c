@@ -48,6 +48,7 @@ size_t status_format(const StatusReport *r, char *buffer, size_t size) {
     if (size) buffer[0] = 0;
     put(&at, &left, "protocol=%d\nversion=%s\npid=%d\nstate=%s\nprefer-phone=%s\npaused=%s\n", STATUS_PROTOCOL,
         VERSION, (int)getpid(), r->state, config_bool_text(r->prefer_phone), config_bool_text(r->paused));
+    if (r->owner_pid > 0) put(&at, &left, "owner-pid=%d\n", (int)r->owner_pid);
     if (r->phone) put(&at, &left, "phone=%s\n", r->phone);
     const SessionStatus *s = r->session;
     if (s) {

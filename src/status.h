@@ -24,6 +24,7 @@
 
 typedef struct {
     const char *state;            /* one of STATUS_STATE_* */
+    pid_t owner_pid;              /* runtime-only, zero for the legacy service */
     bool prefer_phone, paused;
     const char *phone;            /* NULL without a phone */
     const char *problem;          /* why the last attempt failed, or NULL */

@@ -17,8 +17,9 @@ network cable. It starts by itself, survives sleep, unplugging and restarts, and
 no window or menu.
 
 This fork also provides an optional [native macOS control panel](gui/README.md)
-with a menu-bar item, destination routing settings, scoped DNS and service management.
-Build the universal `.app` with `make gui`; the standalone C daemon is unchanged.
+with a menu-bar item, an on-demand USB backend and Clash domain forwarding.
+Build the universal `.app` with `make gui`. The GUI uses user-directory preferences
+and launches the bundled backend for the current GUI session.
 
 ![rndis-tether monitor: a Galaxy S25 is plugged in, connects within seconds and runs a speed test at about 500 Mbit/s](docs/demo.gif)
 

@@ -335,6 +335,10 @@ static void test_status_format(void) {
     status_format(&report, text, sizeof text);
     CHECK(!strncmp(text, "protocol=1\n", 11)); /* readers check it first */
     CHECK(strstr(text, "version=" VERSION "\n") && strstr(text, "state=no-phone\n") && !strstr(text, "\nphone="));
+    CHECK(!strstr(text, "owner-pid="));
+    report.owner_pid = 12345;
+    status_format(&report, text, sizeof text);
+    CHECK(strstr(text, "\nowner-pid=12345\n"));
     CHECK(strstr(text, "\npaused=no\n")); /* always there: clients tell a service that can pause by it */
     report = (StatusReport){.state = "paused", .paused = true, .phone = "Phone 04e8:6864"};
     status_format(&report, text, sizeof text);

@@ -378,6 +378,18 @@ int cli_set_paused(bool paused) {
 
 /* ---------------------------------------------------------------- service control */
 
+int cli_stop_on_demand(void) {
+    char text[STATUS_TEXT_SIZE], owner[32], why[REASON_SIZE] = "the service did not answer";
+    if (!status_query(text, sizeof text)) return 0;
+    if (!*field(text, "owner-pid", owner, sizeof owner)) {
+        fputs("The running service is not an on-demand session.\n", stderr);
+        return 1;
+    }
+    ServiceAnswer answer = ask_service("stop-on-demand", "yes", ADMIN_DENIED_REASON, why, sizeof why);
+    if (answer != SERVICE_APPLIED) fprintf(stderr, "Cannot stop on-demand session: %s\n", why);
+    return answer == SERVICE_APPLIED ? 0 : 1;
+}
+
 /* True when running as root; otherwise tells how to run command with sudo. */
 static bool require_root(const char *command) {
     if (!geteuid()) return true;
