@@ -1,5 +1,4 @@
 import Foundation
-import Darwin
 
 enum UserFiles {
     static let directory = FileManager.default.homeDirectoryForCurrentUser
@@ -21,7 +20,6 @@ enum UserFiles {
 
 struct DemandPreferences: Codable, Equatable {
     var targets: [String] = []
-    var dnsServer = ""
 
     func validated() throws -> DemandPreferences {
         var result = self
@@ -33,13 +31,6 @@ struct DemandPreferences: Codable, Equatable {
             if !result.targets.contains(target) { result.targets.append(target) }
         }
         guard result.targets.count <= 8 else { throw TetherError("最多支持 8 个目标。") }
-        result.dnsServer = dnsServer.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !result.dnsServer.isEmpty {
-            var address = in_addr()
-            guard inet_pton(AF_INET, result.dnsServer, &address) == 1 || ipv6(result.dnsServer) != nil else {
-                throw TetherError("Clash DNS 必须是 IPv4 或 IPv6 地址。")
-            }
-        }
         return result
     }
 
@@ -79,8 +70,7 @@ struct DemandPreferences: Codable, Equatable {
         let value = try validated()
         let targets = try value.targets.map(RoutingTarget.init)
         let data = try JSONSerialization.data(withJSONObject: [
-            "rules": targets.map { $0.clashRule(group: "RNDIS Tether") },
-            "domains": targets.compactMap { $0.domain }, "dnsServer": value.dnsServer
+            "rules": targets.map { $0.clashRule(group: "RNDIS Tether") }
         ], options: [.sortedKeys])
         let settings = String(decoding: data, as: UTF8.self)
         return """
@@ -94,28 +84,13 @@ struct DemandPreferences: Codable, Equatable {
               (config["proxy-groups"] || []).some(p => p.name === group)) {
             throw new Error("RNDIS Tether names already exist. Enable this script only once.");
           }
-          const dns = config.dns || {};
-          if (dns["enhanced-mode"] === "fake-ip" &&
-              dns["fake-ip-filter-mode"] && dns["fake-ip-filter-mode"] !== "blacklist") {
-            throw new Error("RNDIS Tether requires fake-IP blacklist mode or redir-host DNS.");
-          }
-          config.ipv6 = true;
           config.proxies = [...(config.proxies || []), {
             name: outbound, type: "direct", "interface-name": "feth50", "ip-version": "dual"
           }];
           config["proxy-groups"] = [...(config["proxy-groups"] || []), {
             name: group, type: "select", proxies: ["DIRECT", outbound]
           }];
-          const domains = [...new Set(settings.domains)];
           config.rules = [...settings.rules, ...(config.rules || [])];
-          config.dns = { ...dns, enable: true, ipv6: true,
-            "fake-ip-filter": [...new Set([...(dns["fake-ip-filter"] || []), ...domains.map(d => "+." + d)])]
-          };
-          if (settings.dnsServer) {
-            const policy = { ...(dns["nameserver-policy"] || {}) };
-            domains.forEach(d => { policy["+." + d] = [settings.dnsServer]; });
-            config.dns["nameserver-policy"] = policy;
-          }
           return config;
         }
         """ + "\n"

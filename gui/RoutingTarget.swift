@@ -3,7 +3,6 @@ import Darwin
 
 struct RoutingTarget {
     let normalized: String
-    let domain: String?
     private let condition: String
     private let port: String?
 
@@ -49,7 +48,6 @@ struct RoutingTarget {
                   !target.utf8.allSatisfy({ (48...57).contains($0) || $0 == 46 }) else {
                 throw TetherError("目标应为域名、IPv4、IPv6 或 CIDR，可附加端口。IPv6 端口使用 [地址/前缀]:端口。")
             }
-            domain = target
             condition = "DOMAIN-SUFFIX," + target
             normalized = target + (port.map { ":" + $0 } ?? "")
             return
@@ -66,7 +64,6 @@ struct RoutingTarget {
         }
         let address = String(cString: buffer)
         let network = address + "/" + String(prefix)
-        domain = nil
         condition = (family == AF_INET ? "IP-CIDR," : "IP-CIDR6,") + network
         let display = parts.count == 2 ? network : address
         if let port = port {

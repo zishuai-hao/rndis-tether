@@ -1,6 +1,6 @@
 # RNDIS Tether for macOS
 
-Version 0.2.2 provides an on-demand USB backend and address/port forwarding through
+Version 0.2.3 provides an on-demand USB backend and address/port forwarding through
 Clash Verge / mihomo. The application requires macOS 13 or newer and supports Intel
 and Apple silicon.
 
@@ -14,8 +14,8 @@ hooks and this GUI. The application includes the upstream license and attributio
 1. Unzip the application, move it to Applications, and open it.
 2. Enter up to eight domain suffixes, IPv4/IPv6 addresses or CIDR networks, one per
    line. A suffix covers the domain itself and its subdomains. A destination port or
-   port range is optional. The optional DNS field sets a Clash DNS policy for domain
-   targets. Leaving it empty uses Clash's existing DNS servers.
+   port range is optional. Configure DNS and IPv6 through Clash Verge's settings.
+   Enable IPv6 name resolution there when using IPv6-only domain services.
 3. Click **Save and overwrite script**. This writes a standalone RNDIS script directly
    to Clash Verge's `profiles/Script.js`. It replaces the global extension script.
    Then click **Reactivate subscription** in Clash Verge to generate and load the
@@ -56,11 +56,16 @@ The selector initially uses `DIRECT`. Once the USB connection is online, the GUI
 The GUI checks every three seconds and handles Clash profile reloads.
 
 IPv4 forwarding is available on phones without IPv6. IPv6 destinations require a
-working phone IPv6 connection. The generated DNS configuration adds domain fake-IP exclusions and optional
-nameserver policies. Fake-IP blacklist mode and redir-host are supported. Conflicting
-proxy/group names and fake-IP whitelist mode are rejected. Global Clash mode bypasses
+working phone IPv6 connection. The generated script adds the RNDIS outbound, selector
+and routing rules. DNS, fake-IP filters and top-level IPv6 settings are managed by
+Clash Verge. Conflicting proxy/group names are rejected. Global Clash mode bypasses
 the domain rules. The controller integration currently supports Clash Verge's local
 Unix socket, including its per-user service socket.
+
+Clash Verge 2.5.8 restores fields owned by its settings after scripts run. The script
+therefore operates on forwarding configuration, with DNS configured through Verge.
+See the [versioned enforcement implementation](https://github.com/clash-verge-rev/clash-verge-rev/blob/v2.5.8/src-tauri/src/enhance/mod.rs#L330)
+and the [official extension guide](https://www.clashverge.dev/guide/extend.html).
 
 ## Connection lifetime
 
@@ -83,13 +88,13 @@ on the next start if it is forcibly killed.
 
 Preferences are stored in the logged-in user's directory with mode 0600.
 
-- `~/Library/Application Support/RNDIS Tether/settings.json` contains targets and DNS.
+- `~/Library/Application Support/RNDIS Tether/settings.json` contains targets.
 - `~/Library/Application Support/RNDIS Tether/Clash-USB.js` is the standalone exported script.
 - `~/Library/Application Support/RNDIS Tether/previous-Clash-Script.js` is the last
   replaced global script, saved with mode 0600. Identical repeated saves preserve it.
 - `~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles/Script.js`
   is overwritten by **Save and overwrite script**. The generated function adds the
-  RNDIS outbound, selector, target rules and domain DNS settings to the subscription.
+  RNDIS outbound, selector and target rules to the subscription.
 - `~/Library/Application Support/RNDIS Tether/clash-session.json` records the previous
   selector choice before changing it and is removed after successful recovery.
 

@@ -87,7 +87,7 @@ try:
         config.update({"mixed-port": proxy_port, "bind-address": "127.0.0.1", "allow-lan": False,
                        "external-controller-unix": endpoint, "secret": "",
                        "hosts": {"rndis.example.test": "127.0.0.1", "cidr.example.test": "127.0.0.1", "cidr6.example.test": "::1"}, "log-level": "warning"})
-        config["dns"]["use-hosts"] = True
+        config["dns"].update({"use-hosts": True, "enhanced-mode": "fake-ip", "fake-ip-filter": ["localhost"]})
         # Keep test traffic on loopback while exercising the generated dual-stack outbound.
         config["proxies"][0]["interface-name"] = "lo0"
         config["rules"][-1] = "MATCH,REJECT"

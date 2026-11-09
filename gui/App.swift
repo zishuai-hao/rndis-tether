@@ -88,10 +88,9 @@ struct MainView: View {
                         Text("每行一个目标，最多 8 个，可附加端口或范围。\n例如 example.com:443、192.0.2.0/24:8000-8100、[2001:db8::/64]:443").font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity)
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Clash DNS（可选）").font(.subheadline.weight(.medium))
-                        TextField("留空：沿用 Clash DNS", text: $model.dnsServer)
-                            .textFieldStyle(.roundedBorder).accessibilityLabel("域名专用 DNS 服务器")
-                        Text("保存会覆盖 Clash 全局扩展脚本，仅生成 RNDIS 分流配置。保存后在 Clash 点击“重新激活订阅”，使用规则模式。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text("Clash Verge 设置").font(.subheadline.weight(.medium))
+                        Text("DNS 和 IPv6 由 Clash Verge 的设置页管理。需要 IPv6 域名访问时，请开启对应的 IPv6 解析。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text("保存会覆盖全局扩展脚本。之后在 Clash 点击“重新激活订阅”，使用规则模式。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }.frame(width: 255)
                 }
             }.padding(12).disabled(model.busy)

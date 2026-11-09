@@ -5,7 +5,6 @@ final class TetherModel: ObservableObject {
     @Published var service: [String: String] = [:]
     @Published var busy = false
     @Published var targetsText = ""
-    @Published var dnsServer = ""
     @Published var ipv6Address = ""
     @Published var down = "—"
     @Published var up = "—"
@@ -25,7 +24,7 @@ final class TetherModel: ObservableObject {
     var cli: String { resources + "/rndis-tether" }
     var helper: String { resources + "/rndis-tether-gui-helper" }
     var config: DemandPreferences {
-        DemandPreferences(targets: targetsText.components(separatedBy: .newlines), dnsServer: dnsServer)
+        DemandPreferences(targets: targetsText.components(separatedBy: .newlines))
     }
     var dirty: Bool { !FileManager.default.fileExists(atPath: UserFiles.settings.path) || saved != (try? config.validated()) }
     var ownsSession: Bool { service["owner-pid"] == String(getpid()) }
@@ -51,7 +50,6 @@ final class TetherModel: ObservableObject {
 
     init(poll: Bool = true) {
         targetsText = saved.targets.joined(separator: "\n")
-        dnsServer = saved.dnsServer
         if poll {
             refresh()
             timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.refresh() }
