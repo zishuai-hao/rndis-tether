@@ -58,18 +58,26 @@ final class TetherModel: ObservableObject {
         }
     }
 
+    private func persistConfiguration() throws -> DemandPreferences {
+        let value = try config.validated()
+        try value.save()
+        saved = value
+        return value
+    }
+
     func save() {
         do {
-            let value = try config.validated()
-            try value.save()
-            saved = value
-            show("配置和 Clash 脚本已保存。请在 Clash Verge 的全局扩展脚本中合并并启用导出的脚本，然后使用规则模式。", error: false)
+            try persistConfiguration().installClashScript()
+            show("配置已保存，Clash 全局脚本已覆盖为 RNDIS 专用脚本。请在 Clash Verge 点击“重新激活订阅”加载。", error: false)
         } catch { show(error.localizedDescription, error: true) }
     }
 
     func revealScript() {
-        save()
-        if !isError { NSWorkspace.shared.activateFileViewerSelecting([UserFiles.clashScript]) }
+        do {
+            _ = try persistConfiguration()
+            NSWorkspace.shared.activateFileViewerSelecting([UserFiles.clashScript])
+            show("RNDIS 专用脚本已导出到用户目录。", error: false)
+        } catch { show(error.localizedDescription, error: true) }
     }
 
     func refresh(coordinate: Bool = true) {
@@ -150,9 +158,8 @@ final class TetherModel: ObservableObject {
     func start() {
         guard !busy, !coordinating, !ownsSession else { return }
         do {
-            let value = try config.validated()
-            try value.save()
-            saved = value
+            let value = try persistConfiguration()
+            if !value.targets.isEmpty { try value.installClashScript() }
             if let data = try? Data(contentsOf: UserFiles.journal) {
                 let journal = try JSONDecoder().decode(ClashSelection.self, from: data)
                 if journal.owner != getpid() && kill(journal.owner, 0) == 0 {
@@ -179,7 +186,7 @@ final class TetherModel: ObservableObject {
                     self.busy = false
                     switch result {
                     case .success(let output) where output.code == 0:
-                        self.show(output.text.trimmingCharacters(in: .whitespacesAndNewlines), error: false)
+                        self.show(output.text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n脚本更新后，请在 Clash Verge 点击“重新激活订阅”。", error: false)
                     case .success(let output):
                         self.guardian?.terminate(); self.guardian = nil
                         self.show(output.text.trimmingCharacters(in: .whitespacesAndNewlines), error: true)

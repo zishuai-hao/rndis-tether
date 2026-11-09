@@ -50,10 +50,9 @@ enum DemandTests {
             }
             try rejects { _ = try DemandPreferences(dnsServer: "dns.example.com").validated() }
             try rejects { _ = try DemandPreferences(targets: (1...9).map { "a\($0).example.com" }).validated() }
-            let script = try preferences.clashScript(existingScript: "function main(config, name) { config.custom = name; return config; }")
+            let script = try preferences.clashScript()
             let result = try scriptResult(script, input: "{rules:['MATCH,DIRECT'],dns:{'enhanced-mode':'fake-ip','fake-ip-filter':['localhost']}}")
             let config = try JSONSerialization.jsonObject(with: Data(result.utf8)) as! [String: Any]
-            try expect(config["custom"] as? String == "test", "existing script preserved")
             let proxy = (config["proxies"] as! [[String: Any]])[0]
             try expect(proxy["type"] as? String == "direct" && proxy["interface-name"] as? String == "feth50" && proxy["ip-version"] as? String == "dual", "USB outbound")
             let group = (config["proxy-groups"] as! [[String: Any]])[0]
@@ -64,9 +63,23 @@ enum DemandTests {
             try expect(dns["fake-ip-filter"] as? [String] == ["localhost", "+.example.com"], "fake IP exclusion")
             let policy = dns["nameserver-policy"] as! [String: [String]]
             try expect(policy["+.example.com"] == ["1.1.1.1"], "domain DNS policy")
-            let regenerated = try preferences.clashScript(existingScript: script)
-            try expect(try scriptResult(regenerated, input: "{}") == scriptResult(script, input: "{}"), "idempotent export")
-            try rejects { _ = try preferences.clashScript(existingScript: "// BEGIN RNDIS TETHER MANAGED CONFIG") }
+            try expect(script.components(separatedBy: "function main(").count == 2, "standalone main function")
+            try expect(!script.contains("__rndisTetherOriginalMain"), "standalone export has no previous-script wrapper")
+            let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("rndis-script-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: fixture, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: fixture) }
+            let installed = fixture.appendingPathComponent("Script.js")
+            let backup = fixture.appendingPathComponent("previous.js")
+            let oldScript = Data("throw new Error('previous script must be replaced');".utf8)
+            try oldScript.write(to: installed)
+            try preferences.installClashScript(at: installed, backup: backup)
+            try expect(try Data(contentsOf: installed) == Data(script.utf8), "old script replaced completely")
+            try expect(try Data(contentsOf: backup) == oldScript, "previous script backed up")
+            try preferences.installClashScript(at: installed, backup: backup)
+            try expect(try Data(contentsOf: backup) == oldScript, "repeat save preserves original backup")
+            let missing = fixture.appendingPathComponent("absent/Script.js")
+            try rejects { try preferences.installClashScript(at: missing, backup: backup) }
+            try expect(!FileManager.default.fileExists(atPath: missing.path), "missing Clash installation is reported")
             try rejects { _ = try scriptResult(script, input: "{dns:{'enhanced-mode':'fake-ip','fake-ip-filter-mode':'whitelist'}}") }
             try rejects { _ = try scriptResult(script, input: "{proxies:[{name:'RNDIS Tether USB'}]}") }
             let examples: [(String, String, String)] = [

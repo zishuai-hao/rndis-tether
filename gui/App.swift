@@ -91,7 +91,7 @@ struct MainView: View {
                         Text("Clash DNS（可选）").font(.subheadline.weight(.medium))
                         TextField("留空：沿用 Clash DNS", text: $model.dnsServer)
                             .textFieldStyle(.roundedBorder).accessibilityLabel("域名专用 DNS 服务器")
-                        Text("仅写入导出的 Clash 脚本。首次使用需将脚本合并到 Clash Verge 的全局扩展脚本，使用规则模式。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text("保存会覆盖 Clash 全局扩展脚本，仅生成 RNDIS 分流配置。保存后在 Clash 点击“重新激活订阅”，使用规则模式。").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }.frame(width: 255)
                 }
             }.padding(12).disabled(model.busy)
@@ -130,7 +130,7 @@ struct MainView: View {
                 if model.busy { ProgressView().controlSize(.small) }
                 Text(model.busy ? "正在处理，请稍候" : model.dirty ? "有待保存的配置" : "配置保存于用户目录 · 按需连接")
                     .font(.caption).foregroundStyle(.secondary)
-                Button("保存配置") { model.save() }.disabled(model.busy).keyboardShortcut("s", modifiers: .command)
+                Button("保存并覆盖脚本") { model.save() }.disabled(model.busy).keyboardShortcut("s", modifiers: .command)
                 Button(model.ownsSession ? "停止连接" : model.legacyInstalled ? "迁移并启动" : "启动连接") {
                     if model.ownsSession { model.stop() } else { model.start() }
                 }

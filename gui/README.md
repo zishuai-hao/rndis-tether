@@ -1,6 +1,6 @@
 # RNDIS Tether for macOS
 
-Version 0.2.1 provides an on-demand USB backend and address/port forwarding through
+Version 0.2.2 provides an on-demand USB backend and address/port forwarding through
 Clash Verge / mihomo. The application requires macOS 13 or newer and supports Intel
 and Apple silicon.
 
@@ -16,9 +16,11 @@ hooks and this GUI. The application includes the upstream license and attributio
    line. A suffix covers the domain itself and its subdomains. A destination port or
    port range is optional. The optional DNS field sets a Clash DNS policy for domain
    targets. Leaving it empty uses Clash's existing DNS servers.
-3. Save and export **Clash-USB.js**. It includes the current Clash Verge global script
-   and appends a marked RNDIS block. Enable this combined script once in Clash Verge's
-   global extension script editor. Export again and update Clash after changing targets.
+3. Click **Save and overwrite script**. This writes a standalone RNDIS script directly
+   to Clash Verge's `profiles/Script.js`. It replaces the global extension script.
+   Then click **Reactivate subscription** in Clash Verge to generate and load the
+   updated runtime configuration. Repeat these two clicks after changing targets.
+   **Export script** saves a standalone copy in the user directory.
 4. Use Clash's **rule mode** and enable its system proxy. Applications must send their
    traffic through Clash to use these rules. System proxy mode provides domain
    forwarding without requiring Clash TUN route management.
@@ -82,9 +84,18 @@ on the next start if it is forcibly killed.
 Preferences are stored in the logged-in user's directory with mode 0600.
 
 - `~/Library/Application Support/RNDIS Tether/settings.json` contains targets and DNS.
-- `~/Library/Application Support/RNDIS Tether/Clash-USB.js` is the exported combined script.
+- `~/Library/Application Support/RNDIS Tether/Clash-USB.js` is the standalone exported script.
+- `~/Library/Application Support/RNDIS Tether/previous-Clash-Script.js` is the last
+  replaced global script, saved with mode 0600. Identical repeated saves preserve it.
+- `~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles/Script.js`
+  is overwritten by **Save and overwrite script**. The generated function adds the
+  RNDIS outbound, selector, target rules and domain DNS settings to the subscription.
 - `~/Library/Application Support/RNDIS Tether/clash-session.json` records the previous
   selector choice before changing it and is removed after successful recovery.
+
+Writing the global script completes the file update. Clash Verge's **Reactivate
+subscription** action generates and loads its runtime configuration. The GUI reports
+these as separate steps. File-write failures are shown separately from saved user settings.
 
 The root backend uses `/var/db/rndis-tether` for locks and interface ownership, plus
 status/control sockets under `/var/run` while running. macOS creates the connected
