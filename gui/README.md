@@ -47,6 +47,10 @@ GUI does not need to launch at login for routing to work. Pause is temporary and
 is reset by a service restart. Disabling automatic routes and saving removes routes
 owned by the GUI; an alternative network can then be selected by macOS.
 
+Closing the last application window hides the Dock icon while keeping the menu-bar
+item available. Choose **Open control panel** in the menu bar to reopen the window
+and restore the Dock icon.
+
 **Uninstall service** removes the rndis-tether daemon, its configuration and GUI-
 owned routes/resolvers. It does not remove the application or hooks/resolvers
 installed by other tools. A small root-only lock directory may remain.

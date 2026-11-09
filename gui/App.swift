@@ -368,7 +368,11 @@ struct MenuContent: View {
         Text(model.title)
         if let phone = model.service["phone"] { Text(phone) }
         Divider()
-        Button("打开控制面板") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
+        Button("打开控制面板") {
+            NSApp.setActivationPolicy(.regular)
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
         if !model.service.isEmpty {
             Button(model.service["state"] == "paused" ? "恢复连接" : "暂停连接") { model.pauseOrResume() }.disabled(model.busy)
         }
@@ -377,7 +381,15 @@ struct MenuContent: View {
     }
 }
 
+final class TetherAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        sender.setActivationPolicy(.accessory)
+        return false
+    }
+}
+
 struct TetherApp: App {
+    @NSApplicationDelegateAdaptor(TetherAppDelegate.self) private var appDelegate
     @StateObject private var model = TetherModel()
     var body: some Scene {
         Window("RNDIS Tether", id: "main") { MainView(model: model) }.defaultSize(width: 790, height: 790)
